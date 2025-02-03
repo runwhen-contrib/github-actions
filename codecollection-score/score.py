@@ -512,7 +512,7 @@ def clone_and_run_analysis(remote_repo, branch="main"):
     """
     1. Clone remote_repo@branch into a temp dir
     2. Run analysis there
-    3. If --commit-file, commit/push to remote
+    3. If --commit-results, commit/push to remote
     4. Return to original location
     """
     tempdir = tempfile.mkdtemp(prefix="score-")
@@ -525,7 +525,7 @@ def clone_and_run_analysis(remote_repo, branch="main"):
         # run analysis on ./ (the cloned repo)
         analyze_codebundles(".")
 
-        # optionally commit here if the user also provided --commit-file
+        # optionally commit here if the user also provided --commit-results
     finally:
         os.chdir(old_cwd)
     return tempdir
@@ -556,7 +556,7 @@ def commit_in_cloned_repo(cloned_dir, branch="main"):
 def main():
     parser = argparse.ArgumentParser(description="Run Lint & Scoring on .robot files.")
     parser.add_argument("--dir", default=".", help="Directory of .robot files (for local usage).")
-    parser.add_argument("--commit-file", action="store_true", help="Commit changes to the respective repo after scoring.")
+    parser.add_argument("--commit-results", action="store_true", help="Commit changes to the respective repo after scoring.")
     parser.add_argument("--destination-repo", type=str, default="", help="If provided, clone this remote repo first and run analysis inside it.")
     parser.add_argument("--branch", type=str, default="main", help="Branch to use when cloning/pushing remote.")
     args = parser.parse_args()
@@ -578,8 +578,8 @@ def main():
         print_analysis_report(task_results, codebundle_results, lint_results)
 
         os.chdir(old_cwd)
-        # 3) If commit-file is set, push changes
-        if args.commit_file:
+        # 3) If commit-results is set, push changes
+        if args.commit_results:
             commit_in_cloned_repo(cloned_dir, branch=args.branch)
 
         # 4) Cleanup
@@ -590,7 +590,7 @@ def main():
         task_results, codebundle_results, lint_results = analyze_codebundles(args.dir)
         print_analysis_report(task_results, codebundle_results, lint_results)
 
-        if args.commit_file:
+        if args.commit_results:
             commit_local()
 
 if __name__ == "__main__":

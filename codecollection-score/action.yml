@@ -8,7 +8,7 @@ inputs:
     description: "Directory (or path in the cloned repo) where .robot files live."
     required: false
     default: "./"
-  commit_file:
+  commit_results:
     description: "If 'true', commit changes after analysis to the local or remote repo."
     required: false
     default: "false"
@@ -60,7 +60,7 @@ runs:
       run: |
         # Convert user inputs to flags
         commit_flag=""
-        if [ "${{ inputs.commit_file }}" = "true" ]; then
+        if [ "${{ inputs.commit_results }}" = "true" ]; then
           commit_flag="--commit-file"
         fi
 
