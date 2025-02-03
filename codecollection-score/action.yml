@@ -1,0 +1,38 @@
+name: "RunWhen CodeColleciton Scoring Action"
+description: "Provides analysis and scoring for CodeColleciton Authors"
+
+inputs:
+  directory:
+    description: "Directory with .robot files"
+    required: false
+    default: "./"
+  commit_results:
+    description: "If 'true', commit task_analysis.json back to the repo"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install -r ${{ github.action_path }}/requirements.txt
+      shell: bash
+
+    - name: Run Lint & Scoring
+      shell: bash
+      run: |
+        # If the user sets commit_results to 'true', we'll pass --commit-file to the script
+        if [ "${{ inputs.commit_results }}" = "true" ]; then
+          echo "Committing results after scoring..."
+          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}" --commit-file
+        else
+          echo "Not committing results."
+          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}"
+        fi
