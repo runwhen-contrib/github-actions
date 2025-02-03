@@ -94,6 +94,7 @@ def parse_robot_file(filepath):
     tasks = []
     imported_variables = {}
 
+    # Identify user variables from Suite Initialization
     for keyword in suite.resource.keywords:
         if "Suite Initialization" in keyword.name:
             for statement in keyword.body:
@@ -104,26 +105,13 @@ def parse_robot_file(filepath):
                 except Exception:
                     continue
 
+    # --- PARSE TESTS ---
     for test in suite.tests:
-        has_issue = False
-        issue_is_dynamic = False
-        has_add_pre_to_report = False
-        has_push_metric = False
-
-        for step in test.body:
-            step_name = getattr(step, "name", "")
-            step_args = getattr(step, "args", [])
-
-            if "RW.Core.Add Issue" in step_name:
-                has_issue = True
-                if any("${" in arg for arg in step_args):
-                    issue_is_dynamic = True
-
-            if "RW.Core.Add Pre To Report" in step_name:
-                has_add_pre_to_report = True
-
-            if "RW.Core.Push Metric" in step_name:
-                has_push_metric = True
+        # Recursively check if 'RW.Core.Add Issue', 'RW.Core.Push Metric', etc. appear in test.body
+        (has_issue,
+         issue_is_dynamic,
+         has_add_pre_to_report,
+         has_push_metric) = scan_steps_for_keywords(test.body)
 
         tasks.append({
             "name": test.name.strip(),
@@ -140,6 +128,59 @@ def parse_robot_file(filepath):
         "settings": settings_info,
         "tasks": tasks
     }
+
+def scan_steps_for_keywords(steps):
+    """
+    Recursively look at each step (and sub-steps) to see if they contain:
+      - RW.Core.Add Issue
+      - RW.Core.Push Metric
+      - RW.Core.Add Pre To Report
+    Also track if the Issue call is dynamic (i.e., has a '${' in its args).
+    Returns a tuple: (has_issue, issue_is_dynamic, has_add_pre, has_push_metric)
+    """
+    has_issue = False
+    issue_is_dynamic = False
+    has_add_pre_to_report = False
+    has_push_metric = False
+
+    for step in steps:
+        step_name = getattr(step, "name", "") or ""
+        step_args = getattr(step, "args", [])
+
+        # 1) Check for RW.Core.Add Issue
+        if "RW.Core.Add Issue" in step_name:
+            has_issue = True
+            # Check if dynamic
+            if any("${" in arg for arg in step_args):
+                issue_is_dynamic = True
+
+        # 2) Check for RW.Core.Add Pre To Report
+        if "RW.Core.Add Pre To Report" in step_name:
+            has_add_pre_to_report = True
+
+        # 3) Check for RW.Core.Push Metric
+        if "RW.Core.Push Metric" in step_name:
+            has_push_metric = True
+
+        # 4) If this step has sub-steps (for block IF, FOR, etc.), recurse
+        sub_steps = getattr(step, "body", None)
+        if sub_steps:
+            (sub_issue,
+             sub_dynamic,
+             sub_pre,
+             sub_push) = scan_steps_for_keywords(sub_steps)
+
+            # Combine results
+            if sub_issue:
+                has_issue = True
+            if sub_dynamic:
+                issue_is_dynamic = True
+            if sub_pre:
+                has_add_pre_to_report = True
+            if sub_push:
+                has_push_metric = True
+
+    return has_issue, issue_is_dynamic, has_add_pre_to_report, has_push_metric
 
 # ======================================================================
 # LLM Querying
@@ -238,9 +279,18 @@ def compute_runbook_codebundle_score(num_tasks):
         return 2, f"{num_tasks} tasks => likely too large for a single runbook."
 
 def lint_codebundle(settings_info, tasks, is_runbook, is_sli):
+    """
+    Checks the parsed "settings_info" and "tasks" data against the
+    CodeBundle Development Checklist. Returns a dict:
+      {
+        "lint_score": int,  # 1..5
+        "reasons": [str, ...]  # Explanation of any issues
+      }
+    """
     score = 5
     reasons = []
 
+    # SETTINGS CHECKS
     doc = settings_info.get("documentation", "")
     if not doc.strip():
         score -= 1
@@ -256,20 +306,32 @@ def lint_codebundle(settings_info, tasks, is_runbook, is_sli):
         score -= 1
         reasons.append("No Suite Setup found (e.g. 'Suite Initialization').")
 
+    # Collect whether we have any push_metric calls at all
+    any_push_metric = False
+
     for t in tasks:
+        # Basic doc check
         if not t["doc"].strip():
             score -= 1
             reasons.append(f"Task '{t['name']}' has no [Documentation].")
 
+        # For runbook tasks: expect issues or add pre to report
         if is_runbook:
             if (not t["has_issue"]) and (not t["has_add_pre_to_report"]):
                 score -= 0.5
                 reasons.append(f"Runbook task '{t['name']}' neither raises issues nor calls RW.Core.Add Pre To Report.")
-        if is_sli:
-            if not t["has_push_metric"]:
-                score -= 1
-                reasons.append(f"SLI task '{t['name']}' did not call RW.Core.Push Metric.")
 
+        # For SLI: we won't penalize each task for missing push_metric,
+        # but we do track if at least one has it
+        if t["has_push_metric"]:
+            any_push_metric = True
+
+    # If it's an SLI, ensure at least one RW.Core.Push Metric was found across all tasks
+    if is_sli and not any_push_metric:
+        score -= 1
+        reasons.append("No RW.Core.Push Metric call found in this SLI.")
+
+    # Clamp score to [1..5]
     if score < 1:
         score = 1
     elif score > 5:
@@ -279,6 +341,7 @@ def lint_codebundle(settings_info, tasks, is_runbook, is_sli):
         "lint_score": score,
         "reasons": reasons
     }
+
 
 # ======================================================================
 # Analysis Orchestrator
