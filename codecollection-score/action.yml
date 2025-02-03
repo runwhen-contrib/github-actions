@@ -31,8 +31,8 @@ runs:
         # If the user sets commit_results to 'true', we'll pass --commit-file to the script
         if [ "${{ inputs.commit_results }}" = "true" ]; then
           echo "Committing results after scoring..."
-          python score.py --dir "${{ inputs.directory }}" --commit-file
+          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}" --commit-file
         else
           echo "Not committing results."
-          python score.py --dir "${{ inputs.directory }}"
+          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}"
         fi
