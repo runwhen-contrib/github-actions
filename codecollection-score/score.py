@@ -39,7 +39,51 @@ def load_reference_scores():
     return load_json_file(REFERENCE_FILE)
 
 def load_persistent_data():
-    return load_json_file(PERSISTENT_FILE)
+    """
+    Safely load the persistent data from JSON.
+    Ensures we always return a dict with keys:
+      - 'task_results' -> list
+      - 'codebundle_results' -> list
+      - 'lint_results' -> list
+    """
+    # Default skeleton structure if file not found or is invalid
+    default_data = {
+        "task_results": [],
+        "codebundle_results": [],
+        "lint_results": []
+    }
+
+    if os.path.exists(PERSISTENT_FILE):
+        try:
+            with open(PERSISTENT_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+                # If data is already a dict, ensure these keys exist
+                if isinstance(data, dict):
+                    data.setdefault("task_results", [])
+                    data.setdefault("codebundle_results", [])
+                    data.setdefault("lint_results", [])
+                    return data
+
+                # If data is a list or something else, wrap it
+                # so that your code can still do data["task_results"] safely.
+                elif isinstance(data, list):
+                    return {
+                        "task_results": data,
+                        "codebundle_results": [],
+                        "lint_results": []
+                    }
+
+                # If it's something else (string, int), fallback
+                else:
+                    return default_data
+
+        except (OSError, json.JSONDecodeError):
+            # If we can't read or parse, fallback to default
+            return default_data
+    else:
+        # File doesn't exist -> return default
+        return default_data
 
 def save_persistent_data(data):
     save_json_file(PERSISTENT_FILE, data)
