@@ -495,16 +495,36 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
 # Git commit logic
 # ======================================================================
 
-def commit_local():
-    """ Commit changes to the current local repo. """
+def commit_local(use_pr_flow=False, pr_branch_name="auto-task-analysis"):
+    """
+    Stage, commit, and push the updated 'task_analysis.json'.
+    - If use_pr_flow=True, we create/checkout a new local branch and push it.
+    - Otherwise, we assume the user is on a normal local branch and do a straightforward push.
+    """
+    PERSISTENT_FILE = "task_analysis.json"
+
     if not os.path.exists(PERSISTENT_FILE):
-        print("No task_analysis.json found; skipping commit.")
+        print(f"{PERSISTENT_FILE} does not exist; skipping commit.")
         return
+
     try:
+        # Add and commit changes
         subprocess.run(["git", "add", PERSISTENT_FILE], check=True)
         subprocess.run(["git", "commit", "-m", "Update scoring data"], check=True)
-        subprocess.run(["git", "push"], check=True)
-        print("Committed/pushed changes locally.")
+
+        if use_pr_flow:
+            # 1) Create/switch to a new branch if needed
+            #    (If the branch already exists, this will fail—some logic might handle that.)
+            subprocess.run(["git", "checkout", "-b", pr_branch_name], check=True)
+
+            # 2) Push that branch to origin
+            subprocess.run(["git", "push", "origin", pr_branch_name], check=True)
+            print(f"Committed/pushed changes to new branch '{pr_branch_name}'.")
+        else:
+            # Normal push to the current branch
+            subprocess.run(["git", "push"], check=True)
+            print("Committed/pushed changes on existing branch.")
+
     except subprocess.CalledProcessError as e:
         print("Git commit/push failed or no changes to commit:", e)
 
@@ -591,7 +611,11 @@ def main():
         print_analysis_report(task_results, codebundle_results, lint_results)
 
         if args.commit_results:
-            commit_local()
+            event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+            if event_name == "pull_request":
+                commit_local(use_pr_flow=True)
+            else:
+                commit_local(use_pr_flow=False)
 
 if __name__ == "__main__":
     main()
