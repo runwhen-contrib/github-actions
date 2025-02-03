@@ -5,22 +5,20 @@ import fnmatch
 import requests
 import argparse
 import subprocess
+import tempfile
+import shutil
 
 from robot.api import TestSuite
 from tabulate import tabulate
-
-# =================================================================================
-# Configuration / Constants
-# =================================================================================
 
 EXPLAIN_URL = "https://papi.beta.runwhen.com/bow/raw?"
 HEADERS = {"Content-Type": "application/json"}
 PERSISTENT_FILE = "task_analysis.json"
 REFERENCE_FILE = "reference_scores.json"
 
-# =================================================================================
+# ======================================================================
 # JSON Loading / Saving
-# =================================================================================
+# ======================================================================
 
 def load_json_file(filepath):
     if os.path.exists(filepath):
@@ -40,63 +38,42 @@ def load_reference_scores():
     return load_json_file(REFERENCE_FILE)
 
 def load_persistent_data():
-    """
-    Safely load the persistent data from JSON.
-    Ensures we always return a dict with keys:
-      - 'task_results' -> list
-      - 'codebundle_results' -> list
-      - 'lint_results' -> list
-    """
-    # Default skeleton structure if file not found or is invalid
     default_data = {
         "task_results": [],
         "codebundle_results": [],
         "lint_results": []
     }
-
     if os.path.exists(PERSISTENT_FILE):
         try:
             with open(PERSISTENT_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-
-                # If data is already a dict, ensure these keys exist
                 if isinstance(data, dict):
                     data.setdefault("task_results", [])
                     data.setdefault("codebundle_results", [])
                     data.setdefault("lint_results", [])
                     return data
-
-                # If data is a list or something else, wrap it
-                # so that your code can still do data["task_results"] safely.
                 elif isinstance(data, list):
                     return {
                         "task_results": data,
                         "codebundle_results": [],
                         "lint_results": []
                     }
-
-                # If it's something else (string, int), fallback
                 else:
                     return default_data
-
         except (OSError, json.JSONDecodeError):
-            # If we can't read or parse, fallback to default
             return default_data
     else:
-        # File doesn't exist -> return default
         return default_data
 
 def save_persistent_data(data):
     save_json_file(PERSISTENT_FILE, data)
 
-# =================================================================================
+
+# ======================================================================
 # Robot File Parsing
-# =================================================================================
+# ======================================================================
 
 def find_robot_files(directory, pattern="*.robot"):
-    """
-    Recursively find .robot files matching the pattern in the given directory.
-    """
     matches = []
     for root, _, filenames in os.walk(directory):
         for filename in fnmatch.filter(filenames, pattern):
@@ -104,47 +81,19 @@ def find_robot_files(directory, pattern="*.robot"):
     return matches
 
 def parse_robot_file(filepath):
-    """
-    Parse a Robot file using robot.api.TestSuite to extract:
-      - Settings: documentation, metadata, suite_setup
-      - Imported user variables from suite init
-      - Tasks: name, doc, tags, has_issue, issue_is_dynamic, has_add_pre_to_report, has_push_metric
-    Returns a dict with:
-      {
-         "settings": {
-             "documentation": str,
-             "metadata": {...},
-             "suite_setup_name": str or None
-         },
-         "tasks": [
-             {
-               "name": str,
-               "doc": str,
-               "tags": [str, ...],
-               "imported_variables": {...},
-               "has_issue": bool,
-               "issue_is_dynamic": bool,
-               "has_add_pre_to_report": bool,
-               "has_push_metric": bool
-             }, ...
-         ]
-      }
-    """
     suite = TestSuite.from_file_system(filepath)
 
-    # Gather settings info
     settings_info = {
-        "documentation": suite.doc or "",        # Suite-level doc
-        "metadata": suite.metadata or {},        # e.g. {"Author": "XYZ", "Supports": "Kubernetes", ...}
+        "documentation": suite.doc or "",
+        "metadata": suite.metadata or {},
         "suite_setup_name": None
     }
     if suite.setup:
-        settings_info["suite_setup_name"] = suite.setup.name  # e.g. "Suite Initialization"
+        settings_info["suite_setup_name"] = suite.setup.name
 
     tasks = []
     imported_variables = {}
 
-    # Identify user variables from Suite Initialization
     for keyword in suite.resource.keywords:
         if "Suite Initialization" in keyword.name:
             for statement in keyword.body:
@@ -155,7 +104,6 @@ def parse_robot_file(filepath):
                 except Exception:
                     continue
 
-    # Collect tasks
     for test in suite.tests:
         has_issue = False
         issue_is_dynamic = False
@@ -166,18 +114,14 @@ def parse_robot_file(filepath):
             step_name = getattr(step, "name", "")
             step_args = getattr(step, "args", [])
 
-            # Check for RW.Core.Add Issue
             if "RW.Core.Add Issue" in step_name:
                 has_issue = True
-                # Check if dynamic
                 if any("${" in arg for arg in step_args):
                     issue_is_dynamic = True
 
-            # Check for RW.Core.Add Pre To Report
             if "RW.Core.Add Pre To Report" in step_name:
                 has_add_pre_to_report = True
 
-            # Check for RW.Core.Push Metric
             if "RW.Core.Push Metric" in step_name:
                 has_push_metric = True
 
@@ -197,9 +141,9 @@ def parse_robot_file(filepath):
         "tasks": tasks
     }
 
-# =================================================================================
+# ======================================================================
 # LLM Querying
-# =================================================================================
+# ======================================================================
 
 def query_openai(prompt):
     try:
@@ -211,35 +155,25 @@ def query_openai(prompt):
         print(f"Error calling LLM API: {e}")
     return "Response unavailable"
 
-# =================================================================================
-# Scoring Logic (Task-Level)
-# =================================================================================
+# ======================================================================
+# Scoring Logic
+# ======================================================================
 
 def match_reference_score(task_title, reference_data):
-    """
-    If task_title matches a known entry in reference_data, return (score, reasoning).
-    Otherwise (None, None).
-    """
     for ref in reference_data:
         if ref["task"].lower() == task_title.lower():
             return ref["score"], ref.get("reasoning", "")
     return None, None
 
 def score_task_title(title, doc, tags, imported_variables, existing_data, reference_data):
-    """
-    Base LLM-based scoring for clarity/specificity of a task name.
-    """
-    # 1) Check if it exists in existing_data
     for entry in existing_data["task_results"]:
         if entry["task"] == title:
             return entry["score"], entry.get("reasoning", ""), entry.get("suggested_title", "")
 
-    # 2) Check reference data
     ref_score, ref_reasoning = match_reference_score(title, reference_data)
     if ref_score is not None:
         return ref_score, ref_reasoning, "No suggestion required"
 
-    # 3) If not found, call LLM
     where_variable = next((var for var in imported_variables if var in title), None)
     prompt = f"""
 Given the task title: "{title}", documentation: "{doc}", tags: "{tags}", and imported user variables: "{imported_variables}", 
@@ -265,7 +199,6 @@ Return a JSON object with keys: \"score\", \"reasoning\", \"suggested_title\".
         reasoning = response_json.get("reasoning", "")
         suggested_title = response_json.get("suggested_title", f"Improve: {title}")
 
-        # If no 'where' variable but LLM gave >3, reduce it
         if not where_variable and base_score > 3:
             suggested_where = next(iter(imported_variables.values()), "N/A")
             base_score = 3
@@ -277,21 +210,14 @@ Return a JSON object with keys: \"score\", \"reasoning\", \"suggested_title\".
         return 1, "Unable to parse JSON from LLM response.", f"Improve: {title}"
 
 def apply_runbook_issue_rules(base_score, base_reasoning, has_issue, issue_is_dynamic):
-    """
-    Adjust the base LLM-based score depending on whether
-    a runbook task raises issues, and if they are dynamic.
-    """
     score = base_score
     reasoning = base_reasoning
 
     if not has_issue:
-        # Possibly collecting data or adding to a report; penalize by -1 if we assume runbook tasks should raise an Issue.
         score = max(score - 1, 1)
         reasoning += " [Runbook] No RW.Core.Add Issue found. Possibly data-only? -1 penalty.\n"
     else:
-        # has_issue == True
         if issue_is_dynamic:
-            # +1 for dynamic
             score = min(score + 1, 5)
             reasoning += " [Runbook] Issue is dynamic (has variables). +1 bonus.\n"
         else:
@@ -299,15 +225,7 @@ def apply_runbook_issue_rules(base_score, base_reasoning, has_issue, issue_is_dy
 
     return score, reasoning
 
-# =================================================================================
-# Codebundle-Level Checks
-# =================================================================================
-
 def compute_runbook_codebundle_score(num_tasks):
-    """
-    Return (score, reasoning) for the entire runbook codebundle
-    based on the total number of tasks.
-    """
     if num_tasks < 3:
         return 2, f"Only {num_tasks} tasks => under recommended minimum (3)."
     elif 3 <= num_tasks <= 6:
@@ -316,65 +234,42 @@ def compute_runbook_codebundle_score(num_tasks):
         return 4, f"{num_tasks} tasks => near ideal sweet spot (7-8)."
     elif 9 <= num_tasks <= 10:
         return 3, f"{num_tasks} tasks => slightly above recommended sweet spot."
-    else:  # >10
+    else:
         return 2, f"{num_tasks} tasks => likely too large for a single runbook."
 
-# =================================================================================
-# Lint Checks: CodeBundle Development Checklist
-# =================================================================================
-
 def lint_codebundle(settings_info, tasks, is_runbook, is_sli):
-    """
-    Checks the parsed "settings_info" and "tasks" data against the
-    CodeBundle Development Checklist. Returns a dict:
-
-      {
-        "lint_score": int,  # 1..5
-        "reasons": [str, str, ...]  # Explanation of any issues
-      }
-    """
     score = 5
     reasons = []
 
-    # SETTINGS CHECKS
     doc = settings_info.get("documentation", "")
     if not doc.strip():
         score -= 1
         reasons.append("Missing or empty suite-level Documentation in *** Settings ***.")
 
     metadata = settings_info.get("metadata", {})
-    # Check for required metadata keys
     for key in ["Author", "Display Name", "Supports"]:
         if key not in metadata:
             score -= 1
             reasons.append(f"Missing Metadata '{key}' in *** Settings ***.")
 
-    # Suite Setup
     if not settings_info.get("suite_setup_name"):
         score -= 1
         reasons.append("No Suite Setup found (e.g. 'Suite Initialization').")
 
-    # TASK CHECKS
     for t in tasks:
         if not t["doc"].strip():
             score -= 1
             reasons.append(f"Task '{t['name']}' has no [Documentation].")
 
-        # For a runbook, ideally tasks that do something should either raise an issue or add to the report
         if is_runbook:
             if (not t["has_issue"]) and (not t["has_add_pre_to_report"]):
-                # Could be purely data collection, but let's penalize it slightly
-                # if it truly does nothing to "surface" results
                 score -= 0.5
                 reasons.append(f"Runbook task '{t['name']}' neither raises issues nor calls RW.Core.Add Pre To Report.")
-
-        # For an SLI, ideally it should push at least one metric
         if is_sli:
             if not t["has_push_metric"]:
                 score -= 1
                 reasons.append(f"SLI task '{t['name']}' did not call RW.Core.Push Metric.")
 
-    # Clamp score to [1..5]
     if score < 1:
         score = 1
     elif score > 5:
@@ -385,28 +280,18 @@ def lint_codebundle(settings_info, tasks, is_runbook, is_sli):
         "reasons": reasons
     }
 
-# =================================================================================
-# Main Analysis
-# =================================================================================
+# ======================================================================
+# Analysis Orchestrator
+# ======================================================================
 
 def analyze_codebundles(directory):
-    """
-    1) Parse each .robot file (get settings + tasks).
-    2) For each file, do:
-       - Task-level LLM scoring
-       - (if runbook) apply issue logic
-       - (if runbook) compute codebundle-level score for # tasks
-       - Lint check using the CodeBundle Development Checklist
-    3) Persist combined results to PERSISTENT_FILE.
-    4) Return (task_results, codebundle_results, lint_results).
-    """
+    """Analyze local .robot files in `directory`, then produce task_results, etc."""
     robot_files = find_robot_files(directory, "*.robot")
     existing_data = load_persistent_data()
     reference_data = load_reference_scores()
 
-    codebundle_map = {}  # (bundle_name, file_name) => { "settings": {...}, "tasks": [...] }
+    codebundle_map = {}
 
-    # Parse each file
     for filepath in robot_files:
         bundle_name = os.path.basename(os.path.dirname(filepath))
         file_name = os.path.basename(filepath)
@@ -425,7 +310,6 @@ def analyze_codebundles(directory):
         is_runbook = "runbook.robot" in file_name.lower()
         is_sli = "sli.robot" in file_name.lower()
 
-        # ========== 1) Task-Level Scoring ==========
         for t in tasks:
             base_score, base_reasoning, suggested_title = score_task_title(
                 title=t["name"],
@@ -435,30 +319,24 @@ def analyze_codebundles(directory):
                 existing_data=existing_data,
                 reference_data=reference_data
             )
-
             final_score = base_score
             final_reasoning = base_reasoning
 
-            # If runbook, apply "issue logic"
             if is_runbook:
                 final_score, final_reasoning = apply_runbook_issue_rules(
-                    final_score,
-                    final_reasoning,
-                    t["has_issue"],
-                    t["issue_is_dynamic"]
+                    final_score, final_reasoning,
+                    t["has_issue"], t["issue_is_dynamic"]
                 )
 
             all_task_results.append({
                 "codebundle": bundle_name,
                 "file": file_name,
-                "filepath": filepath,
                 "task": t["name"],
                 "score": final_score,
                 "reasoning": final_reasoning,
                 "suggested_title": suggested_title
             })
 
-        # ========== 2) Codebundle-Level Scoring (Runbooks) ==========
         if is_runbook:
             num_tasks = len(tasks)
             cscore, creasoning = compute_runbook_codebundle_score(num_tasks)
@@ -470,7 +348,6 @@ def analyze_codebundles(directory):
                 "reasoning": creasoning
             })
 
-        # ========== 3) Lint Checks ==========
         lint_result = lint_codebundle(settings_info, tasks, is_runbook, is_sli)
         lint_results.append({
             "codebundle": bundle_name,
@@ -479,7 +356,6 @@ def analyze_codebundles(directory):
             "reasons": lint_result["reasons"]
         })
 
-    # Persist final combined data
     combined_data = {
         "task_results": all_task_results,
         "codebundle_results": codebundle_results,
@@ -489,18 +365,9 @@ def analyze_codebundles(directory):
 
     return all_task_results, codebundle_results, lint_results
 
-# =================================================================================
-# Reporting
-# =================================================================================
-
 def print_analysis_report(task_results, codebundle_results, lint_results):
-    """
-    Print:
-      1) Task-Level Analysis
-      2) Codebundle-Level Analysis (Runbooks)
-      3) Codebundle Linting
-    """
-    # 1) Task-Level Table
+    # (As before) prints out your fancy tables
+    # ...
     headers = ["Codebundle", "File", "Task", "Score"]
     table_data = []
     low_score_entries = []
@@ -529,7 +396,6 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
             print(f"  Suggested Title:\n    {entry['suggested_title']}")
             print("-" * 60)
 
-    # 2) Codebundle-Level Analysis (Runbooks)
     if codebundle_results:
         headers_cb = ["Codebundle", "File", "Num Tasks", "Codebundle Score", "Reasoning"]
         table_data_cb = []
@@ -545,12 +411,10 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
         print("\n=== Codebundle-Level Analysis (Runbooks) ===\n")
         print(tabulate(table_data_cb, headers=headers_cb, tablefmt="fancy_grid"))
 
-    # 3) Lint Results
     if lint_results:
         headers_lint = ["Codebundle", "File", "Lint Score", "Reasons"]
         table_data_lint = []
         for lr in lint_results:
-            # Combine the reasons with line breaks or bullet points
             reason_text = "\n".join([f"- {r}" for r in lr["reasons"]]) if lr["reasons"] else ""
             table_data_lint.append([
                 lr["codebundle"],
@@ -564,50 +428,107 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
 
     print()
 
-def commit_persistent_file():
-    """
-    Stage, commit, and push the updated task_analysis.json.
-    Requires that Git is configured and we have permissions to push.
-    """
+# ======================================================================
+# Git commit logic
+# ======================================================================
+
+def commit_local():
+    """ Commit changes to the current local repo. """
     if not os.path.exists(PERSISTENT_FILE):
-        print(f"{PERSISTENT_FILE} does not exist; skipping commit.")
+        print("No task_analysis.json found; skipping commit.")
         return
-
-    # Make sure there's something to commit
-    # We can do a quick 'git status' to see if the file changed, or just try to commit.
     try:
-        # Stage the file
         subprocess.run(["git", "add", PERSISTENT_FILE], check=True)
-
-        # Commit. If there's nothing to commit, this will fail, so we might catch it
-        commit_msg = "Update scoring data"
-        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
-
-        # Finally, push
+        subprocess.run(["git", "commit", "-m", "Update scoring data"], check=True)
         subprocess.run(["git", "push"], check=True)
-
-        print("Successfully committed and pushed task_analysis.json")
+        print("Committed/pushed changes locally.")
     except subprocess.CalledProcessError as e:
-        # If there's nothing to commit or if push fails, you'll land here.
         print("Git commit/push failed or no changes to commit:", e)
 
+def clone_and_run_analysis(remote_repo, branch="main"):
+    """
+    1. Clone remote_repo@branch into a temp dir
+    2. Run analysis there
+    3. If --commit-file, commit/push to remote
+    4. Return to original location
+    """
+    tempdir = tempfile.mkdtemp(prefix="score-")
+    old_cwd = os.getcwd()
+    try:
+        print(f"Cloning {remote_repo} (branch: {branch}) -> {tempdir}")
+        subprocess.run(["git", "clone", "--branch", branch, "--depth=1", remote_repo, tempdir], check=True)
+        os.chdir(tempdir)
+
+        # run analysis on ./ (the cloned repo)
+        analyze_codebundles(".")
+
+        # optionally commit here if the user also provided --commit-file
+    finally:
+        os.chdir(old_cwd)
+    return tempdir
+
+def commit_in_cloned_repo(cloned_dir, branch="main"):
+    """
+    If we want to push changes from the cloned repo, do so here.
+    """
+    if not os.path.exists(os.path.join(cloned_dir, PERSISTENT_FILE)):
+        print("No task_analysis.json found in cloned repo; skipping commit.")
+        return
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(cloned_dir)
+        subprocess.run(["git", "add", PERSISTENT_FILE], check=True)
+        subprocess.run(["git", "commit", "-m", "Update scoring data (remote)"], check=True)
+        subprocess.run(["git", "push", "origin", branch], check=True)
+        print("Committed/pushed changes to remote.")
+    except subprocess.CalledProcessError as e:
+        print("Remote commit/push failed or no changes to commit:", e)
+    finally:
+        os.chdir(old_cwd)
+
+# ======================================================================
+# Main
+# ======================================================================
 
 def main():
-
     parser = argparse.ArgumentParser(description="Run Lint & Scoring on .robot files.")
-    parser.add_argument('--dir', default='codebundles', help='Directory with .robot files')
-    parser.add_argument('--commit-file', action='store_true',
-                        help='If set, commit and push the updated task_analysis.json to the repo')
-
+    parser.add_argument("--dir", default=".", help="Directory of .robot files (for local usage).")
+    parser.add_argument("--commit-file", action="store_true", help="Commit changes to the respective repo after scoring.")
+    parser.add_argument("--destination-repo", type=str, default="", help="If provided, clone this remote repo first and run analysis inside it.")
+    parser.add_argument("--branch", type=str, default="main", help="Branch to use when cloning/pushing remote.")
     args = parser.parse_args()
 
-    # 1) Run your analysis
-    task_results, codebundle_results, lint_results = analyze_codebundles(args.dir)
-    print_analysis_report(task_results, codebundle_results, lint_results)
+    if args.destination_repo:
+        # 1) Clone the remote
+        cloned_dir = clone_and_run_analysis(args.destination_repo, branch=args.branch)
+        # 2) Print the analysis report from the data in that cloned dir
+        #    But note that analyzing inside `clone_and_run_analysis` saved task_analysis.json in the cloned dir
+        #    We can read it from there or do it inside that function
+        #    For simplicity, let's read from the cloned_dir
+        old_cwd = os.getcwd()
+        os.chdir(cloned_dir)
+        # re-load the results
+        data = load_persistent_data()
+        task_results = data["task_results"]
+        codebundle_results = data["codebundle_results"]
+        lint_results = data["lint_results"]
+        print_analysis_report(task_results, codebundle_results, lint_results)
 
-    # 2) If --commit-file is set, commit the updated file
-    if args.commit_file:
-        commit_persistent_file()
+        os.chdir(old_cwd)
+        # 3) If commit-file is set, push changes
+        if args.commit_file:
+            commit_in_cloned_repo(cloned_dir, branch=args.branch)
+
+        # 4) Cleanup
+        shutil.rmtree(cloned_dir, ignore_errors=True)
+
+    else:
+        # Local usage
+        task_results, codebundle_results, lint_results = analyze_codebundles(args.dir)
+        print_analysis_report(task_results, codebundle_results, lint_results)
+
+        if args.commit_file:
+            commit_local()
 
 if __name__ == "__main__":
     main()
