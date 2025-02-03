@@ -43,20 +43,17 @@ runs:
       shell: bash
       run: |
         if [ -n "${{ inputs.auth_token }}" ]; then
-          cat <<EOF >> ~/.netrc
-    machine github.com
-    login ${{ inputs.auth_token }}
-    password x-oauth-basic
-    EOF
+          echo "machine github.com" >> ~/.netrc
+          echo "login ${{ inputs.auth_token }}" >> ~/.netrc
+          echo "password x-oauth-basic" >> ~/.netrc
+
           chmod 600 ~/.netrc
 
-          # Optional: Instruct Git to use netrc
           git config --global credential.helper netrc
           echo "Configured netrc with the provided auth token."
         else
           echo "No auth_token provided; skipping credential config."
         fi
-
 
     - name: Run Lint & Scoring
       shell: bash
