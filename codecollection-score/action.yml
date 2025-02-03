@@ -61,7 +61,7 @@ runs:
         # Convert user inputs to flags
         commit_flag=""
         if [ "${{ inputs.commit_results }}" = "true" ]; then
-          commit_flag="--commit-file"
+          commit_flag="--commit-results"
         fi
 
         dest_flag=""
