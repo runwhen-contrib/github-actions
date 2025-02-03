@@ -1,0 +1,24 @@
+name: "RunWhen CodeColleciton Scoring Action"
+description: "Provides analysis and scoring for CodeColleciton Authors"
+
+inputs:
+  directory:
+    description: "Directory with .robot files"
+    required: false
+    default: "./"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Run Lint & Scoring
+      run: |
+        python score.py --dir "${{ inputs.directory }}"
