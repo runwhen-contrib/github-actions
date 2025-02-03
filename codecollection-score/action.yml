@@ -9,7 +9,7 @@ inputs:
   commit_results:
     description: "If 'true', commit task_analysis.json back to the repo"
     required: false
-    default: "true"
+    default: "false"
 
 runs:
   using: "composite"
