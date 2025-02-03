@@ -1,38 +1,77 @@
 name: "RunWhen CodeColleciton Scoring Action"
 description: "Provides analysis and scoring for CodeColleciton Authors"
 
+
+
 inputs:
   directory:
-    description: "Directory with .robot files"
+    description: "Directory (or path in the cloned repo) where .robot files live."
     required: false
     default: "./"
-  commit_results:
-    description: "If 'true', commit task_analysis.json back to the repo"
+  commit_file:
+    description: "If 'true', commit changes after analysis to the local or remote repo."
     required: false
     default: "false"
-
+  destination_repo:
+    description: "If provided, clone this remote repo and run analysis inside it. If empty, run locally."
+    required: false
+    default: ""
+  branch:
+    description: "Branch to use when cloning/pushing remote. Default is 'main'"
+    required: false
+    default: "main"
+  auth_token:
+    description: "Personal Access Token or other credentials if you need to push to a private repo. If empty, no special auth is used."
+    required: false
+    default: ""
+    
 runs:
   using: "composite"
   steps:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.x'
+        python-version: "3.x"
 
     - name: Install dependencies
+      shell: bash
       run: |
         pip install -r requirements.txt
         pip install -r ${{ github.action_path }}/requirements.txt
+
+    - name: Configure Netrc if Auth Token is Provided
       shell: bash
+      run: |
+        if [ -n "${{ inputs.auth_token }}" ]; then
+          echo "machine github.com
+login ${{ inputs.auth_token }}
+password x-oauth-basic" >> ~/.netrc
+          chmod 600 ~/.netrc
+
+          # Optional: Instruct Git to use netrc
+          git config --global credential.helper netrc
+          echo "Configured netrc with the provided auth token."
+        else
+          echo "No auth_token provided; skipping credential config."
+        fi
 
     - name: Run Lint & Scoring
       shell: bash
       run: |
-        # If the user sets commit_results to 'true', we'll pass --commit-file to the script
-        if [ "${{ inputs.commit_results }}" = "true" ]; then
-          echo "Committing results after scoring..."
-          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}" --commit-file
-        else
-          echo "Not committing results."
-          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}"
+        # Convert user inputs to flags
+        commit_flag=""
+        if [ "${{ inputs.commit_file }}" = "true" ]; then
+          commit_flag="--commit-file"
         fi
+
+        dest_flag=""
+        if [ -n "${{ inputs.destination_repo }}" ]; then
+          dest_flag="--destination-repo \"${{ inputs.destination_repo }}\""
+        fi
+
+        # Now run your script from the action's repo path
+        python ${{ github.action_path }}/score.py \
+          --dir "${{ inputs.directory }}" \
+          $commit_flag \
+          $dest_flag \
+          --branch "${{ inputs.branch }}"
