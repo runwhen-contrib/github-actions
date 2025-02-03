@@ -4,6 +4,7 @@ import json
 import fnmatch
 import requests
 import argparse
+import subprocess
 
 from robot.api import TestSuite
 from tabulate import tabulate
@@ -563,14 +564,50 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
 
     print()
 
+def commit_persistent_file():
+    """
+    Stage, commit, and push the updated task_analysis.json.
+    Requires that Git is configured and we have permissions to push.
+    """
+    if not os.path.exists(PERSISTENT_FILE):
+        print(f"{PERSISTENT_FILE} does not exist; skipping commit.")
+        return
+
+    # Make sure there's something to commit
+    # We can do a quick 'git status' to see if the file changed, or just try to commit.
+    try:
+        # Stage the file
+        subprocess.run(["git", "add", PERSISTENT_FILE], check=True)
+
+        # Commit. If there's nothing to commit, this will fail, so we might catch it
+        commit_msg = "Update scoring data"
+        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+
+        # Finally, push
+        subprocess.run(["git", "push"], check=True)
+
+        print("Successfully committed and pushed task_analysis.json")
+    except subprocess.CalledProcessError as e:
+        # If there's nothing to commit or if push fails, you'll land here.
+        print("Git commit/push failed or no changes to commit:", e)
+
+
 def main():
 
     parser = argparse.ArgumentParser(description="Run Lint & Scoring on .robot files.")
     parser.add_argument('--dir', default='codebundles', help='Directory with .robot files')
+    parser.add_argument('--commit-file', action='store_true',
+                        help='If set, commit and push the updated task_analysis.json to the repo')
+
     args = parser.parse_args()
 
+    # 1) Run your analysis
     task_results, codebundle_results, lint_results = analyze_codebundles(args.dir)
     print_analysis_report(task_results, codebundle_results, lint_results)
+
+    # 2) If --commit-file is set, commit the updated file
+    if args.commit_file:
+        commit_persistent_file()
 
 if __name__ == "__main__":
     main()
