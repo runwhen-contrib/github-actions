@@ -10,6 +10,9 @@ Additional checks include:
 - if metrics are pushed (for sli tasks)
 - if basic linting checks pass (Metadata, Display Name, etc exist)
 
+## Content Caching 
+This codebundle supports the storage and usage of a json file in order to reduce the load of LLM calls and speeding up subsequent calls. This feature, as in the example below, comitted to the user repo if desired by setting `commit_results: true`. Simply remove the file from the repo to reset the content. 
+
 ## Example Usage: 
 
 ```
