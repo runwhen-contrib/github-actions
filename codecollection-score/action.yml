@@ -18,7 +18,9 @@ runs:
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
+      shell: bash
 
     - name: Run Lint & Scoring
       run: |
         python score.py --dir "${{ inputs.directory }}"
+      shell: bash
