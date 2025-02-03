@@ -44,10 +44,10 @@ runs:
       run: |
         if [ -n "${{ inputs.auth_token }}" ]; then
           cat <<EOF >> ~/.netrc
-          machine github.com
-          login ${{ inputs.auth_token }}
-          password x-oauth-basic
-          EOF
+    machine github.com
+    login ${{ inputs.auth_token }}
+    password x-oauth-basic
+    EOF
           chmod 600 ~/.netrc
 
           # Optional: Instruct Git to use netrc
