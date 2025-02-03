@@ -24,7 +24,7 @@ inputs:
     description: "Personal Access Token or other credentials if you need to push to a private repo. If empty, no special auth is used."
     required: false
     default: ""
-    
+
 runs:
   using: "composite"
   steps:
@@ -43,9 +43,11 @@ runs:
       shell: bash
       run: |
         if [ -n "${{ inputs.auth_token }}" ]; then
-          echo "machine github.com
-login ${{ inputs.auth_token }}
-password x-oauth-basic" >> ~/.netrc
+          cat <<EOF >> ~/.netrc
+          machine github.com
+          login ${{ inputs.auth_token }}
+          password x-oauth-basic
+          EOF
           chmod 600 ~/.netrc
 
           # Optional: Instruct Git to use netrc
@@ -54,6 +56,7 @@ password x-oauth-basic" >> ~/.netrc
         else
           echo "No auth_token provided; skipping credential config."
         fi
+
 
     - name: Run Lint & Scoring
       shell: bash
