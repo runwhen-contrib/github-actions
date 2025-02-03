@@ -22,5 +22,5 @@ runs:
 
     - name: Run Lint & Scoring
       run: |
-        python score.py --dir "${{ inputs.directory }}"
+        python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}"
       shell: bash
