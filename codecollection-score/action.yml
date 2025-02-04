@@ -1,7 +1,5 @@
-name: "RunWhen CodeColleciton Scoring Action"
-description: "Provides analysis and scoring for CodeColleciton Authors"
-
-
+name: "RunWhen CodeCollection Scoring Action"
+description: "Provides analysis and scoring for CodeCollection Authors, with optional automated PR creation."
 
 inputs:
   directory:
@@ -12,16 +10,32 @@ inputs:
     description: "If 'true', commit changes after analysis to the local or remote repo."
     required: false
     default: "false"
+  apply_suggestions:
+    description: "If 'true', apply suggested title updates to the .robot files."
+    required: false
+    default: "false"
+  open_pr:
+    description: "If 'true', create a pull request with changes."
+    required: false
+    default: "false"
+  pr_branch:
+    description: "Branch name for the automated PR if 'open_pr' is enabled."
+    required: false
+    default: "auto-task-analysis"
+  base_branch:
+    description: "Base branch to open PR against."
+    required: false
+    default: "main"
   destination_repo:
     description: "If provided, clone this remote repo and run analysis inside it. If empty, run locally."
     required: false
     default: ""
   branch:
-    description: "Branch to use when cloning/pushing remote. Default is 'main'"
+    description: "Branch to use when cloning/pushing remote. Default is 'main'."
     required: false
     default: "main"
   auth_token:
-    description: "Personal Access Token or other credentials if you need to push to a private repo. If empty, no special auth is used."
+    description: "Personal Access Token for authentication if required to push to a private repo."
     required: false
     default: ""
 
@@ -36,26 +50,24 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        pip install -r requirements.txt
         pip install -r ${{ github.action_path }}/requirements.txt
+        pip install -r requirements.txt
 
-    - name: Configure Netrc if Auth Token is Provided
+    - name: Configure Git Authentication if Auth Token is Provided
       shell: bash
       run: |
         if [ -n "${{ inputs.auth_token }}" ]; then
-          echo "machine github.com" >> ~/.netrc
-          echo "login ${{ inputs.auth_token }}" >> ~/.netrc
-          echo "password x-oauth-basic" >> ~/.netrc
-
-          chmod 600 ~/.netrc
-
-          git config --global credential.helper netrc
-          echo "Configured netrc with the provided auth token."
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global credential.helper store
+          echo "https://${{ inputs.auth_token }}@github.com" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+          echo "Configured Git credentials with provided auth token."
         else
-          echo "No auth_token provided; skipping credential config."
+          echo "No auth_token provided; skipping Git authentication."
         fi
 
-    - name: Run Lint & Scoring
+    - name: Run CodeCollection Lint & Scoring
       shell: bash
       run: |
         # Convert user inputs to flags
@@ -64,14 +76,28 @@ runs:
           commit_flag="--commit-results"
         fi
 
+        suggestions_flag=""
+        if [ "${{ inputs.apply_suggestions }}" = "true" ]; then
+          suggestions_flag="--apply-suggestions"
+        fi
+
+        pr_flag=""
+        if [ "${{ inputs.open_pr }}" = "true" ]; then
+          pr_flag="--open-pr"
+        fi
+
         dest_flag=""
         if [ -n "${{ inputs.destination_repo }}" ]; then
           dest_flag="--destination-repo \"${{ inputs.destination_repo }}\""
         fi
 
-        # Now run your script from the action's repo path
+        # Execute the script from the action's repository
         python ${{ github.action_path }}/score.py \
           --dir "${{ inputs.directory }}" \
           $commit_flag \
+          $suggestions_flag \
+          $pr_flag \
+          --pr-branch "${{ inputs.pr_branch }}" \
+          --base-branch "${{ inputs.base_branch }}" \
           $dest_flag \
           --branch "${{ inputs.branch }}"

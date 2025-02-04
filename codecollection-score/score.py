@@ -347,33 +347,26 @@ def lint_codebundle(settings_info, tasks, is_runbook, is_sli):
 # Analysis Orchestrator
 # ======================================================================
 
-def analyze_codebundles(directory):
-    """Analyze local .robot files in `directory`, then produce task_results, etc."""
+def analyze_codebundles(directory, cloned_dir=None):
+    """
+    Analyzes .robot files and adjusts file paths based on cloned repo.
+    If `cloned_dir` is provided, ensures file paths are correct.
+    """
     robot_files = find_robot_files(directory, "*.robot")
     existing_data = load_persistent_data()
     reference_data = load_reference_scores()
 
-    codebundle_map = {}
+    all_task_results = []
 
     for filepath in robot_files:
         bundle_name = os.path.basename(os.path.dirname(filepath))
         file_name = os.path.basename(filepath)
 
+        relative_path = os.path.relpath(filepath, cloned_dir or directory)
+
         parsed_data = parse_robot_file(filepath)
-        codebundle_map[(bundle_name, file_name)] = parsed_data
 
-    all_task_results = []
-    codebundle_results = []
-    lint_results = []
-
-    for (bundle_name, file_name), parsed in codebundle_map.items():
-        settings_info = parsed["settings"]
-        tasks = parsed["tasks"]
-
-        is_runbook = "runbook.robot" in file_name.lower()
-        is_sli = "sli.robot" in file_name.lower()
-
-        for t in tasks:
+        for t in parsed_data["tasks"]:
             base_score, base_reasoning, suggested_title = score_task_title(
                 title=t["name"],
                 doc=t["doc"],
@@ -382,51 +375,22 @@ def analyze_codebundles(directory):
                 existing_data=existing_data,
                 reference_data=reference_data
             )
-            final_score = base_score
-            final_reasoning = base_reasoning
-
-            if is_runbook:
-                final_score, final_reasoning = apply_runbook_issue_rules(
-                    final_score, final_reasoning,
-                    t["has_issue"], t["issue_is_dynamic"]
-                )
 
             all_task_results.append({
                 "codebundle": bundle_name,
                 "file": file_name,
+                "filepath": relative_path,  
                 "task": t["name"],
-                "score": final_score,
-                "reasoning": final_reasoning,
+                "score": base_score,  # ✅ Ensure score is always included
+                "reasoning": base_reasoning,
                 "suggested_title": suggested_title
             })
 
-        if is_runbook:
-            num_tasks = len(tasks)
-            cscore, creasoning = compute_runbook_codebundle_score(num_tasks)
-            codebundle_results.append({
-                "codebundle": bundle_name,
-                "file": file_name,
-                "num_tasks": num_tasks,
-                "codebundle_score": cscore,
-                "reasoning": creasoning
-            })
+    save_persistent_data({"task_results": all_task_results})
+    return all_task_results
 
-        lint_result = lint_codebundle(settings_info, tasks, is_runbook, is_sli)
-        lint_results.append({
-            "codebundle": bundle_name,
-            "file": file_name,
-            "lint_score": lint_result["lint_score"],
-            "reasons": lint_result["reasons"]
-        })
 
-    combined_data = {
-        "task_results": all_task_results,
-        "codebundle_results": codebundle_results,
-        "lint_results": lint_results
-    }
-    save_persistent_data(combined_data)
 
-    return all_task_results, codebundle_results, lint_results
 
 def print_analysis_report(task_results, codebundle_results, lint_results):
     # (As before) prints out your fancy tables
@@ -494,12 +458,37 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
 # ======================================================================
 # Git commit logic
 # ======================================================================
+def apply_suggested_titles(task_results, repo_root="."):
+    """
+    Applies suggested task title changes in the correct file locations.
+    If `repo_root` is set, it applies them inside the cloned repo.
+    """
+    for entry in task_results:
+        relative_filepath = entry["filepath"]
+        full_path = os.path.join(repo_root, relative_filepath)  # Ensure correct path
 
-def commit_local(use_pr_flow=False, pr_branch_name="auto-task-analysis"):
+        if not os.path.exists(full_path):
+            print(f"⚠️ Skipping {full_path}: File does not exist.")
+            continue
+
+        # Read file, apply changes, and save it back
+        with open(full_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        if entry["suggested_title"] and entry["task"] != entry["suggested_title"]: 
+            updated_content = content.replace(entry["task"], entry["suggested_title"])
+
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(updated_content)
+
+            print(f"✅ Applied change in {full_path}: '{entry["task"]}' -> '{entry['suggested_title']}'")
+
+
+def commit_local(use_pr_flow=False, pr_branch_name="auto-task-analysis", open_pr=False, base_branch="main"):
     """
     Stage, commit, and push the updated 'task_analysis.json'.
-    - If use_pr_flow=True, we create/checkout a new local branch and push it.
-    - Otherwise, we assume the user is on a normal local branch and do a straightforward push.
+    If use_pr_flow=True, create a new local branch and push it.
+    If open_pr=True, run 'gh pr create' after pushing.
     """
     PERSISTENT_FILE = "task_analysis.json"
 
@@ -508,25 +497,34 @@ def commit_local(use_pr_flow=False, pr_branch_name="auto-task-analysis"):
         return
 
     try:
-        # Add and commit changes
         subprocess.run(["git", "add", PERSISTENT_FILE], check=True)
         subprocess.run(["git", "commit", "-m", "Update scoring data"], check=True)
 
         if use_pr_flow:
-            # 1) Create/switch to a new branch if needed
-            #    (If the branch already exists, this will fail—some logic might handle that.)
             subprocess.run(["git", "checkout", "-b", pr_branch_name], check=True)
-
-            # 2) Push that branch to origin
             subprocess.run(["git", "push", "origin", pr_branch_name], check=True)
             print(f"Committed/pushed changes to new branch '{pr_branch_name}'.")
+
+            if open_pr:
+                # Attempt to create a PR using GH CLI
+                title = "Automated Title Updates"
+                body = "Applied suggestions from analysis."
+                subprocess.run([
+                    "gh", "pr", "create",
+                    "--title", title,
+                    "--body", body,
+                    "--base", base_branch,
+                    "--head", pr_branch_name
+                ], check=True)
+                print("Opened pull request via GH CLI.")
         else:
-            # Normal push to the current branch
+            # Normal push
             subprocess.run(["git", "push"], check=True)
             print("Committed/pushed changes on existing branch.")
-
+            if open_pr:
+                print("open_pr was requested, but use_pr_flow=False. Need a branch to open a PR from!")
     except subprocess.CalledProcessError as e:
-        print("Git commit/push failed or no changes to commit:", e)
+        print("Git commit/push or PR creation failed:", e)
 
 def clone_and_run_analysis(remote_repo, branch="main"):
     """
@@ -542,41 +540,76 @@ def clone_and_run_analysis(remote_repo, branch="main"):
         subprocess.run(["git", "clone", "--branch", branch, "--depth=1", remote_repo, tempdir], check=True)
         os.chdir(tempdir)
 
-        # run analysis on ./ (the cloned repo)
-        analyze_codebundles(".")
+        # Run analysis with correct file path adjustments
+        task_results = analyze_codebundles(directory=".", cloned_dir=tempdir)
 
-        # optionally commit here if the user also provided --commit-results
     finally:
         os.chdir(old_cwd)
+
     return tempdir
 
-def commit_in_cloned_repo(cloned_dir, branch="main"):
+def commit_in_cloned_repo_with_pr(cloned_dir, base_branch="main", pr_branch="auto-task-analysis"):
     """
-    If we want to push changes from the cloned repo, do so here.
+    Push changes from the cloned repo using a PR workflow.
+    - Creates a new branch (`pr_branch`) if it doesn’t exist.
+    - Commits changes to the new branch.
+    - Pushes to remote.
+    - Opens a PR via GitHub CLI.
     """
-    if not os.path.exists(os.path.join(cloned_dir, PERSISTENT_FILE)):
-        print("No task_analysis.json found in cloned repo; skipping commit.")
+    persistent_file_path = os.path.join(cloned_dir, PERSISTENT_FILE)
+    
+    if not os.path.exists(persistent_file_path):
+        print("❌ No task_analysis.json found in cloned repo; skipping commit.")
         return
+
     old_cwd = os.getcwd()
     try:
         os.chdir(cloned_dir)
-        subprocess.run(["git", "add", PERSISTENT_FILE], check=True)
-        subprocess.run(["git", "commit", "-m", "Update scoring data (remote)"], check=True)
-        subprocess.run(["git", "push", "origin", branch], check=True)
-        print("Committed/pushed changes to remote.")
+
+        # Ensure we fetch the latest from the base branch
+        subprocess.run(["git", "fetch", "origin", base_branch], check=True)
+
+        # Create and checkout a new branch
+        subprocess.run(["git", "checkout", "-b", pr_branch], check=True)
+
+        # Stage and commit changes
+        subprocess.run(["git", "add", "."], check=True)
+        subprocess.run(["git", "commit", "-m", "Automated scoring update"], check=True)
+
+        # Push the branch to origin
+        subprocess.run(["git", "push", "-u", "origin", pr_branch], check=True)
+        print(f"✅ Pushed changes to {pr_branch} on remote.")
+
+        # Open a pull request using GitHub CLI (gh)
+        pr_title = "CodeCollection Task Analysis Updates"
+        pr_body = "This PR updates the content with the latest analysis results."
+        subprocess.run([
+            "gh", "pr", "create",
+            "--base", base_branch,
+            "--head", pr_branch,
+            "--title", pr_title,
+            "--body", pr_body
+        ], check=True)
+        print(f"✅ Pull request created for {pr_branch} -> {base_branch}")
+
     except subprocess.CalledProcessError as e:
-        print("Remote commit/push failed or no changes to commit:", e)
+        print("❌ Git operation failed:", e)
+
     finally:
         os.chdir(old_cwd)
+
 
 # ======================================================================
 # Main
 # ======================================================================
-
 def main():
     parser = argparse.ArgumentParser(description="Run Lint & Scoring on .robot files.")
     parser.add_argument("--dir", default=".", help="Directory of .robot files (for local usage).")
     parser.add_argument("--commit-results", action="store_true", help="Commit changes to the respective repo after scoring.")
+    parser.add_argument("--apply-suggestions", action="store_true", help="Apply suggested titles to .robot files.")
+    parser.add_argument("--open-pr", action="store_true", help="Open a Pull Request after committing changes.")
+    parser.add_argument("--pr-branch", default="auto-task-analysis", help="Branch to create if --open-pr or use_pr_flow is set.")
+    parser.add_argument("--base-branch", default="main", help="Base branch for the PR if --open-pr is set.")
     parser.add_argument("--destination-repo", type=str, default="", help="If provided, clone this remote repo first and run analysis inside it.")
     parser.add_argument("--branch", type=str, default="main", help="Branch to use when cloning/pushing remote.")
     args = parser.parse_args()
@@ -596,13 +629,14 @@ def main():
         codebundle_results = data["codebundle_results"]
         lint_results = data["lint_results"]
         print_analysis_report(task_results, codebundle_results, lint_results)
-
-        os.chdir(old_cwd)
+        if args.apply_suggestions:
+            apply_suggested_titles(task_results)
         # 3) If commit-results is set, push changes
         if args.commit_results:
-            commit_in_cloned_repo(cloned_dir, branch=args.branch)
+            commit_in_cloned_repo_with_pr(cloned_dir, base_branch=args.branch)
 
         # 4) Cleanup
+        os.chdir(old_cwd)
         shutil.rmtree(cloned_dir, ignore_errors=True)
 
     else:
@@ -610,12 +644,16 @@ def main():
         task_results, codebundle_results, lint_results = analyze_codebundles(args.dir)
         print_analysis_report(task_results, codebundle_results, lint_results)
 
+        if args.apply_suggestions:
+            apply_suggested_titles(task_results)
+
         if args.commit_results:
             event_name = os.environ.get("GITHUB_EVENT_NAME", "")
             if event_name == "pull_request":
                 commit_local(use_pr_flow=True)
             else:
                 commit_local(use_pr_flow=False)
+
 
 if __name__ == "__main__":
     main()
