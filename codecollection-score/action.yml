@@ -97,7 +97,6 @@ runs:
           echo "head_sha=" >> $GITHUB_OUTPUT
 
     - name: Run Lint & Scoring
-      shell: bash
       run: |
         EXTRA_FLAGS=""
 
@@ -154,3 +153,4 @@ runs:
 
         echo "Running scoring with flags: $EXTRA_FLAGS"
         python ${{ github.action_path }}/score.py $EXTRA_FLAGS
+      shell: bash
