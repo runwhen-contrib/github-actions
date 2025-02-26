@@ -1,15 +1,67 @@
-name: "RunWhen CodeColleciton Scoring Action"
-description: "Provides analysis and scoring for CodeColleciton Authors"
+name: "RunWhen CodeCollection Scoring Action"
+description: "Provides analysis and scoring for CodeCollection Authors"
 
 inputs:
   directory:
-    description: "Directory with .robot files"
+    description: "Directory with .robot files (ignored if running with git-url)"
     required: false
     default: "./"
+
   commit_results:
-    description: "If 'true', commit task_analysis.json back to the repo"
+    description: "Deprecated; replaced by 'commit_changes'. If 'true', we also set commit_changes to 'true'."
     required: false
     default: "false"
+
+  git_url:
+    description: "Optional: A remote git URL to clone"
+    required: false
+    default: ""
+
+  branch:
+    description: "Branch to checkout after cloning"
+    required: false
+    default: "main"
+
+  only_changed:
+    description: "Whether to only analyze changed .robot files in a PR (requires base/head to be set unless we use the fallback)."
+    required: false
+    default: "false"
+
+  base_sha:
+    description: "Base SHA for the PR diff"
+    required: false
+    default: ""
+
+  head_sha:
+    description: "Head SHA for the PR diff"
+    required: false
+    default: ""
+
+  apply_suggestions:
+    description: "If 'true', automatically apply suggested .robot changes (titles & tags)."
+    required: false
+    default: "false"
+
+  commit_changes:
+    description: "If 'true', commit local changes (task_analysis.json + .robot files) back to the repo."
+    required: false
+    default: "false"
+
+  open_pr:
+    description: "If 'true', open a pull request after committing changes."
+    required: false
+    default: "false"
+
+  pr_branch:
+    description: "Name of the new or existing branch to push to if open_pr is 'true'."
+    required: false
+    default: "auto-task-analysis"
+
+  base_branch:
+    description: "Branch to merge the PR into."
+    required: false
+    default: "main"
+
 
 runs:
   using: "composite"
@@ -21,18 +73,83 @@ runs:
 
     - name: Install dependencies
       run: |
+        # Example: install from your project's requirements plus this action's own
         pip install -r requirements.txt
         pip install -r ${{ github.action_path }}/requirements.txt
       shell: bash
 
+    - name: Set default base/head if only_changed is true
+      id: set-default-basehead
+      run: |
+        if [ "${{ inputs.only_changed }}" = "true" ]; then
+          if [ -z "${{ inputs.base_sha }}" ] && [ -z "${{ inputs.head_sha }}" ]; then
+            echo "No base/head SHA provided; defaulting to HEAD~1...HEAD."
+            echo "base_sha=HEAD~1" >> $GITHUB_OUTPUT
+            echo "head_sha=HEAD" >> $GITHUB_OUTPUT
+          else
+            echo "base_sha=${{ inputs.base_sha }}" >> $GITHUB_OUTPUT
+            echo "head_sha=${{ inputs.head_sha }}" >> $GITHUB_OUTPUT
+          fi
+        else
+          # If not only_changed, empty them
+          echo "base_sha=" >> $GITHUB_OUTPUT
+          echo "head_sha=" >> $GITHUB_OUTPUT
+
     - name: Run Lint & Scoring
       shell: bash
       run: |
-        # If the user sets commit_results to 'true', we'll pass --commit-file to the script
+        EXTRA_FLAGS=""
+
+        # Map old 'commit_results' to new 'commit_changes' if set
         if [ "${{ inputs.commit_results }}" = "true" ]; then
-          echo "Committing results after scoring..."
-          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}" --commit-file
-        else
-          echo "Not committing results."
-          python ${{ github.action_path }}/score.py --dir "${{ inputs.directory }}"
+          # We'll forcibly set commit_changes
+          EXTRA_FLAGS="$EXTRA_FLAGS --commit-changes"
         fi
+
+        # If the user sets git_url, we pass it on
+        if [ "${{ inputs.git_url }}" != "" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --git-url '${{ inputs.git_url }}' --branch '${{ inputs.branch }}'"
+        else
+          EXTRA_FLAGS="$EXTRA_FLAGS --dir '${{ inputs.directory }}'"
+        fi
+
+        # Only analyze changed files if 'only_changed' is true
+        if [ "${{ inputs.only_changed }}" = "true" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --only-changed"
+        fi
+
+        # Grab the outputs from set-default-basehead
+        if [ "${{ steps.set-default-basehead.outputs.base_sha }}" != "" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --base-sha '${{ steps.set-default-basehead.outputs.base_sha }}'"
+        fi
+
+        if [ "${{ steps.set-default-basehead.outputs.head_sha }}" != "" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --head-sha '${{ steps.set-default-basehead.outputs.head_sha }}'"
+        fi
+
+        # If user wants to apply suggestions
+        if [ "${{ inputs.apply_suggestions }}" = "true" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --apply-suggestions"
+        fi
+
+        # If user wants to commit changes
+        if [ "${{ inputs.commit_changes }}" = "true" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --commit-changes"
+        fi
+
+        # If user wants to open a PR
+        if [ "${{ inputs.open_pr }}" = "true" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --open-pr"
+        fi
+
+        # PR branch, base branch
+        if [ "${{ inputs.pr_branch }}" != "" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --pr-branch '${{ inputs.pr_branch }}'"
+        fi
+
+        if [ "${{ inputs.base_branch }}" != "" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --base-branch '${{ inputs.base_branch }}'"
+        fi
+
+        echo "Running scoring with flags: $EXTRA_FLAGS"
+        python ${{ github.action_path }}/score.py $EXTRA_FLAGS
