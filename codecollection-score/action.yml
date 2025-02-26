@@ -95,6 +95,7 @@ runs:
           # If not only_changed, empty them
           echo "base_sha=" >> $GITHUB_OUTPUT
           echo "head_sha=" >> $GITHUB_OUTPUT
+        fi
 
     - name: Run Lint & Scoring
       run: |
