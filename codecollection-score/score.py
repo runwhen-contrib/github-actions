@@ -611,20 +611,13 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
 
 def apply_suggestions_locally(task_results):
     """
-    For each .robot file in task_results, if a suggested title differs
-    or if we're missing an access tag, apply them directly in the file.
-
-    We do a naive string replace for the old task name -> new task name.
-    Then we append the suggested access tag to [Tags] if missing.
-
-    This is simplistic and may fail if your .robot lines are complicated:
-      - If multiple tasks have the same name
-      - If there's weird multi-line tags or partial matches
-    For a robust approach, parse, modify, and re-serialize with a Robot parser.
-
-    Note: This function modifies files in place.
+    Naive approach: 
+      - Replace old task name with suggested title
+      - If missing an access tag, append the suggested tag to the next [Tags] line we see 
+        in that same test block.
+    This won't work for complicated multi-line tasks or if [Tags] appear after the Test Name line, etc.
     """
-    # Group results by filepath
+
     file_map = {}
     for entry in task_results:
         file_map.setdefault(entry["filepath"], []).append(entry)
@@ -635,62 +628,70 @@ def apply_suggestions_locally(task_results):
             continue
 
         with open(filepath, "r", encoding="utf-8") as f:
-            original_content = f.readlines()
+            lines = f.readlines()
 
-        modified_lines = []
-        # We'll do a naive line-by-line replacement
-        for line in original_content:
-            # Potentially update the task name or append an access tag
+        # 1) Naive title replacement
+        updated_lines = []
+        for line in lines:
             new_line = line
-
             for e in entries:
-                task_name = e["task"]
-                suggested_title = e["suggested_title"]
-                if suggested_title and suggested_title != task_name:
-                    # If the line matches the old task name, we replace it
-                    # with the suggested title. This is naive: it just does
-                    # line.replace(task_name, suggested_title).
-                    if task_name in new_line:
-                        new_line = new_line.replace(task_name, suggested_title)
+                old_title = e["task"]
+                new_title = e["suggested_title"]
+                if new_title and new_title != old_title and old_title in new_line:
+                    new_line = new_line.replace(old_title, new_title)
+            updated_lines.append(new_line)
 
-            modified_lines.append(new_line)
+        # 2) Append missing access tags
+        #    We do a simplistic approach: whenever we see a line containing '[Tags]',
+        #    check if it belongs to a task that had a missing access tag.
+        #    In Robot Framework text, a line might look like:
+        #        [Tags]    existing-tag1    existing-tag2
+        #    We'll append the suggested access tag to that line if it belongs to the same test
+        #    name we replaced or recognized.
+        #
+        #    Realistically, you'd use Robot Framework's parser to know exactly which
+        #    test block this [Tags] line belongs to.
 
-        # Now we handle missing access tags by adding the suggested one
-        # We'll do a second pass that if a test line has "Tags" for a relevant task, we add the new tag
-        # but we need to know which tasks appear on which line. This is tricky with naive text scanning.
-        # We'll do a best-effort approach: if the line has `[Tags]` for a given task name, we append the suggested tag
-        # if not present.
-        # For robust approach, you'd parse the file structure using a Robot parser AST.
-
-        # We'll store the final lines separately
         final_lines = []
-        i = 0
-        while i < len(modified_lines):
-            line = modified_lines[i]
-            wrote_line = False
-            for e in entries:
-                if e["missing_access_tag"] and e["suggested_access_tag"]:
-                    # We look for a line with `[Tags]` that belongs to the specific task name
-                    # There's no direct "this line belongs to that task" in naive text. We can attempt a heuristic:
-                    # if the line contains '    [Tags]' and the next line or two is the task name or we are
-                    # in the test block for that task. This is a simplistic approach, might fail in some structures.
-                    pass
-            final_lines.append(line)
-            i += 1
+        # We'll keep track of the "current test name" in a naive way:
+        current_test_name = None
 
-        # Alternatively, simpler approach:
-        # We just do a naive addition at the end of the file for demonstration. 
-        # But let's do a small approach: whenever we see a line with '[Tags]', if it references the same line as the old task name or something. 
-        # This is quite complicated to do reliably in a text-based approach. 
-        # For demonstration, let's do a simpler approach: we find the line with '    [Tags]' after a '*** Test Cases ***' or the task name. 
-        # We'll skip a robust approach for brevity.
+        for i, line in enumerate(updated_lines):
+            stripped = line.strip()
+
+            # Detect if this line looks like a test case name.
+            # The Robot format isn't as rigid as e.g. YAML, so a naive approach might fail.
+            # But let's do a simple check:
+            if stripped and not stripped.startswith("[") and not stripped.startswith("#"):
+                # Possibly a test name line. We'll store it as current test name
+                current_test_name = stripped
+
+            # If line has [Tags], see if we need to add a suggested access tag
+            if "[Tags]" in stripped:
+                # We'll see if we have an entry for the current test that is missing an access tag
+                # Because we replaced the old title with a new one, let's see if 'current_test_name'
+                # matches the suggested_title (or possibly the original task name if we want).
+                tags_line = line.rstrip("\n")
+                for e in entries:
+                    # If the current test name matches e["suggested_title"]
+                    # (or if you prefer: e["task"]) AND it's missing an access tag, append it
+                    if e["missing_access_tag"] and e["suggested_access_tag"]:
+                        # naive match:
+                        if current_test_name == e["suggested_title"] or current_test_name == e["task"]:
+                            # Append to the line if not already present
+                            if e["suggested_access_tag"] not in tags_line:
+                                # Add some spacing:
+                                tags_line += f"    {e['suggested_access_tag']}"
+                                print(f"Appending access tag '{e['suggested_access_tag']}' to test '{current_test_name}' in {filepath}")
+
+                line = tags_line + "\n"
+
+            final_lines.append(line)
 
         with open(filepath, "w", encoding="utf-8") as f:
             f.writelines(final_lines)
 
-        # If you want to do a second pass properly to insert the new tag, do so here:
-        # (Omitted for brevity or left as an exercise.)
-        print(f"✅ Potentially updated titles in: {filepath}")
+        print(f"✅ Possibly updated titles/tags in: {filepath}")
 
 
 # --------------------------------------------------------------------------------
