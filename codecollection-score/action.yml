@@ -79,6 +79,7 @@ runs:
       shell: bash
 
     - name: Set default base/head if only_changed is true
+      shell: bash
       id: set-default-basehead
       run: |
         if [ "${{ inputs.only_changed }}" = "true" ]; then
