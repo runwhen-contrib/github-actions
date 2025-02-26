@@ -111,7 +111,7 @@ runs:
         if [ "${{ inputs.git_url }}" != "" ]; then
           EXTRA_FLAGS="$EXTRA_FLAGS --git-url '${{ inputs.git_url }}' --branch '${{ inputs.branch }}'"
         else
-          EXTRA_FLAGS="$EXTRA_FLAGS --dir '${{ inputs.directory }}'"
+          EXTRA_FLAGS="$EXTRA_FLAGS --dir ${{ inputs.directory }}"
         fi
 
         # Only analyze changed files if 'only_changed' is true
