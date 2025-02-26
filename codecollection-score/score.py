@@ -611,13 +611,16 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
 
 def apply_suggestions_locally(task_results):
     """
-    Naive approach: 
-      - Replace old task name with suggested title
-      - If missing an access tag, append the suggested tag to the next [Tags] line we see 
-        in that same test block.
-    This won't work for complicated multi-line tasks or if [Tags] appear after the Test Name line, etc.
+    Naive approach:
+      1) Replace old task name with suggested title in any line that contains the old name.
+      2) If a test is missing an 'access:...' tag, append the suggested tag to its multiline [Tags] block.
+
+    It attempts to handle lines that start with '...' for multiline tags.
+    The logic still relies on text heuristics (e.g., recognizing test name lines),
+    so it may fail for unusual .robot layouts. For robust editing, use the Robot parser.
     """
 
+    # Group tasks by filepath so we edit each file only once
     file_map = {}
     for entry in task_results:
         file_map.setdefault(entry["filepath"], []).append(entry)
@@ -630,63 +633,112 @@ def apply_suggestions_locally(task_results):
         with open(filepath, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        # 1) Naive title replacement
+        # --- Step 1: Naively replace old task name with suggested title ---
         updated_lines = []
         for line in lines:
             new_line = line
             for e in entries:
                 old_title = e["task"]
                 new_title = e["suggested_title"]
+                # If LLM gave us a new title and it's different from old
                 if new_title and new_title != old_title and old_title in new_line:
                     new_line = new_line.replace(old_title, new_title)
             updated_lines.append(new_line)
 
-        # 2) Append missing access tags
-        #    We do a simplistic approach: whenever we see a line containing '[Tags]',
-        #    check if it belongs to a task that had a missing access tag.
-        #    In Robot Framework text, a line might look like:
-        #        [Tags]    existing-tag1    existing-tag2
-        #    We'll append the suggested access tag to that line if it belongs to the same test
-        #    name we replaced or recognized.
-        #
-        #    Realistically, you'd use Robot Framework's parser to know exactly which
-        #    test block this [Tags] line belongs to.
+        # --- Step 2: Append missing access tags in [Tags] blocks ---
+        # We'll try to track:
+        #   - The "current test name"
+        #   - Whether we're inside a multiline [Tags] block
+        # This is still a guess-based approach: Robot allows many format variations.
 
         final_lines = []
-        # We'll keep track of the "current test name" in a naive way:
         current_test_name = None
+        inside_tags_block = False
+        tags_block_lines = []  # collect lines that belong to the current [Tags] block
+        tags_block_start_index = None
 
-        for i, line in enumerate(updated_lines):
+        def flush_tags_block():
+            """
+            Called when we exit a [Tags] block. We'll see if the test is missing an access tag,
+            then append the suggested one if needed.
+            """
+            nonlocal tags_block_lines
+
+            # tags_block_lines might have multiple lines (the [Tags] line + any '...' lines)
+            # We'll see if we have an entry for the "current_test_name" that is missing a tag
+            # Because we replaced old_title -> new_title in step 1, `current_test_name` should match
+            # the final version of the test name if the test name is on a single line.
+
+            # Search the relevant entry in `entries`
+            for e in entries:
+                if e["missing_access_tag"] and e["suggested_access_tag"]:
+                    # If the test name is either the old or new
+                    # (Sometimes we might guess that the user wrote the test name in a single line).
+                    if current_test_name in [e["task"], e["suggested_title"]]:
+                        # Now check if the tags_block_lines already contain the suggested tag
+                        # We'll just do a simple string search.
+                        joined = "".join(tags_block_lines)
+                        if e["suggested_access_tag"] not in joined:
+                            # We'll append it to the last line in tags_block_lines
+                            # or if the last line starts with '...', we append to that. 
+                            # Or we can add a new '...' line ourselves.
+                            # For simplicity, let's try appending to the last line.
+
+                            # If the last line starts with '...', append there:
+                            if tags_block_lines and tags_block_lines[-1].lstrip().startswith("..."):
+                                # insert with some spacing
+                                tags_block_lines[-1] = tags_block_lines[-1].rstrip("\n") + f"    {e['suggested_access_tag']}\n"
+                            else:
+                                # Otherwise just append to the same line
+                                tags_block_lines[-1] = tags_block_lines[-1].rstrip("\n") + f"    {e['suggested_access_tag']}\n"
+
+                            print(f"Appending access tag '{e['suggested_access_tag']}' to test '{current_test_name}' in {filepath}")
+
+            # Then we place the updated tags_block_lines back to final_lines
+            for block_line in tags_block_lines:
+                final_lines.append(block_line)
+
+            # Reset for next block
+            tags_block_lines = []
+
+        i = 0
+        while i < len(updated_lines):
+            line = updated_lines[i]
             stripped = line.strip()
 
-            # Detect if this line looks like a test case name.
-            # The Robot format isn't as rigid as e.g. YAML, so a naive approach might fail.
-            # But let's do a simple check:
-            if stripped and not stripped.startswith("[") and not stripped.startswith("#"):
-                # Possibly a test name line. We'll store it as current test name
+            # 1) Check if we are starting a new test (a line that is neither blank nor starts with '[' nor '#')
+            if stripped and not stripped.startswith("[") and not stripped.startswith("#") and not stripped.startswith("..."):
+                # This is our guess for the test name line
                 current_test_name = stripped
 
-            # If line has [Tags], see if we need to add a suggested access tag
-            if "[Tags]" in stripped:
-                # We'll see if we have an entry for the current test that is missing an access tag
-                # Because we replaced the old title with a new one, let's see if 'current_test_name'
-                # matches the suggested_title (or possibly the original task name if we want).
-                tags_line = line.rstrip("\n")
-                for e in entries:
-                    # If the current test name matches e["suggested_title"]
-                    # (or if you prefer: e["task"]) AND it's missing an access tag, append it
-                    if e["missing_access_tag"] and e["suggested_access_tag"]:
-                        # naive match:
-                        if current_test_name == e["suggested_title"] or current_test_name == e["task"]:
-                            # Append to the line if not already present
-                            if e["suggested_access_tag"] not in tags_line:
-                                # Add some spacing:
-                                tags_line += f"    {e['suggested_access_tag']}"
-                                print(f"Appending access tag '{e['suggested_access_tag']}' to test '{current_test_name}' in {filepath}")
+            # 2) Check if we're entering a [Tags] block
+            if not inside_tags_block:
+                # If we find a line containing "[Tags]" ignoring trailing ...
+                if "[Tags]" in stripped:
+                    inside_tags_block = True
+                    tags_block_start_index = i
+                    tags_block_lines = [line]  # start collecting
+                else:
+                    final_lines.append(line)
+            else:
+                # We are inside a [Tags] block, so we store lines.
+                # If the next line starts with '...', it's part of this block.
+                if stripped.startswith("..."):
+                    # Still in the same block
+                    tags_block_lines.append(line)
+                else:
+                    # We have reached the end of this block
+                    # flush the block
+                    flush_tags_block()
+                    inside_tags_block = False
+                    tags_block_start_index = None
+                    # Now process the current line as normal
+                    final_lines.append(line)
+            i += 1
 
-                line = tags_line + "\n"
-
-            final_lines.append(line)
+        # If the file ended while we were in a [Tags] block
+        if inside_tags_block:
+            flush_tags_block()
 
         with open(filepath, "w", encoding="utf-8") as f:
             f.writelines(final_lines)
