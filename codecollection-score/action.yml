@@ -109,7 +109,7 @@ runs:
 
         # If the user sets git_url, we pass it on
         if [ "${{ inputs.git_url }}" != "" ]; then
-          EXTRA_FLAGS="$EXTRA_FLAGS --git-url '${{ inputs.git_url }}' --branch '${{ inputs.branch }}'"
+          EXTRA_FLAGS="$EXTRA_FLAGS --git-url ${{ inputs.git_url }} --branch ${{ inputs.branch }}"
         else
           EXTRA_FLAGS="$EXTRA_FLAGS --dir ${{ inputs.directory }}"
         fi
@@ -121,11 +121,11 @@ runs:
 
         # Grab the outputs from set-default-basehead
         if [ "${{ steps.set-default-basehead.outputs.base_sha }}" != "" ]; then
-          EXTRA_FLAGS="$EXTRA_FLAGS --base-sha '${{ steps.set-default-basehead.outputs.base_sha }}'"
+          EXTRA_FLAGS="$EXTRA_FLAGS --base-sha ${{ steps.set-default-basehead.outputs.base_sha }}"
         fi
 
         if [ "${{ steps.set-default-basehead.outputs.head_sha }}" != "" ]; then
-          EXTRA_FLAGS="$EXTRA_FLAGS --head-sha '${{ steps.set-default-basehead.outputs.head_sha }}'"
+          EXTRA_FLAGS="$EXTRA_FLAGS --head-sha ${{ steps.set-default-basehead.outputs.head_sha }}"
         fi
 
         # If user wants to apply suggestions
@@ -145,11 +145,11 @@ runs:
 
         # PR branch, base branch
         if [ "${{ inputs.pr_branch }}" != "" ]; then
-          EXTRA_FLAGS="$EXTRA_FLAGS --pr-branch '${{ inputs.pr_branch }}'"
+          EXTRA_FLAGS="$EXTRA_FLAGS --pr-branch ${{ inputs.pr_branch }}"
         fi
 
         if [ "${{ inputs.base_branch }}" != "" ]; then
-          EXTRA_FLAGS="$EXTRA_FLAGS --base-branch '${{ inputs.base_branch }}'"
+          EXTRA_FLAGS="$EXTRA_FLAGS --base-branch ${{ inputs.base_branch }}"
         fi
 
         echo "Running scoring with flags: $EXTRA_FLAGS"
