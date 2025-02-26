@@ -9,6 +9,7 @@ import tempfile
 import shutil
 
 from robot.api import TestSuite
+from robot.api.parsing import get_model
 from tabulate import tabulate
 
 # --------------------------------------------------------------------------------
@@ -609,6 +610,96 @@ def print_analysis_report(task_results, codebundle_results, lint_results):
 # Applying Suggestions Locally
 # --------------------------------------------------------------------------------
 
+def apply_suggestions_with_parser(task_results):
+    """
+    Parser-based approach to rename tasks and append missing access tags
+    in .robot files using `get_model` and `model.serialize(...)`.
+
+    We'll gather each file's tasks from `task_results`, parse it, then:
+      - For each test matching the old name, rename it to `suggested_title`
+      - If missing_access_tag is True, append the suggested_access_tag to [Tags]
+      - Then serialize the updated AST back to the file.
+    """
+
+    # 1) Organize task_results by filepath
+    file_map = {}
+    for entry in task_results:
+        fp = entry["filepath"]
+        file_map.setdefault(fp, []).append(entry)
+
+    for filepath, entries in file_map.items():
+        if not os.path.exists(filepath):
+            print(f"Skipping missing file: {filepath}")
+            continue
+
+        print(f"\nParsing {filepath} with Robot parser...")
+
+        model = get_model(filepath)
+        changed_something = False
+
+        # We'll build a quick lookup:
+        # old_name -> (new_name, missing_access, suggested_access)
+        tasks_map = {}
+        for e in entries:
+            old_name = e["task"]
+            new_name = e.get("suggested_title") or old_name
+            missing = e.get("missing_access_tag", False)
+            suggested_tag = e.get("suggested_access_tag", "")
+            tasks_map[old_name] = (new_name, missing, suggested_tag)
+
+        # 2) Walk model.sections to find TestCaseSection
+        for section in model.sections:
+            if section.type == 'TESTCASE':  # A TestCaseSection
+                for testcase in section.body:
+                    old_name = testcase.name
+                    if old_name in tasks_map:
+                        new_name, missing_access, sug_access = tasks_map[old_name]
+
+                        # (A) Rename the test
+                        if new_name and new_name != old_name:
+                            testcase.name = new_name
+                            changed_something = True
+                            print(f"  Renamed test '{old_name}' -> '{new_name}'")
+
+                        # (B) If missing an access tag, append sug_access
+                        if missing_access and sug_access:
+                            # We'll see if there's an existing [Tags] statement
+                            tags_stmt = None
+                            for stmt in testcase.body:
+                                if stmt.type == 'TAGS':
+                                    tags_stmt = stmt
+                                    break
+                            if tags_stmt:
+                                # Check if it already has "access:"
+                                # Typically tokens for arguments might be: tags_stmt.tokens
+                                token_values = [t.value for t in tags_stmt.tokens if t.type == t.ARG]
+                                has_access = any(val.lower().startswith("access:") for val in token_values)
+                                if not has_access:
+                                    # Insert new token
+                                    tags_stmt.tokens.append(tags_stmt.tokens[0].clone(value='    '))
+                                    tags_stmt.tokens.append(tags_stmt.tokens[0].clone(value=sug_access, type=t.ARG))
+                                    changed_something = True
+                                    print(f"  Appended '{sug_access}' to existing [Tags] for '{new_name}'")
+                            else:
+                                # No [Tags], create one
+                                from robot.api.parsing import Statement, Token
+                                new_stmt = Statement.from_tokens([
+                                    Token(Token.TAGS, '[Tags]'),
+                                    Token(Token.SEPARATOR, '    '),
+                                    Token(Token.ARG, sug_access)
+                                ])
+                                testcase.body.insert(0, new_stmt)
+                                changed_something = True
+                                print(f"  Created [Tags] with '{sug_access}' for '{new_name}'")
+
+        if changed_something:
+            # (C) Serialize back to the file
+            with open(filepath, "w", encoding="utf-8") as out:
+                model.serialize(out)
+            print(f"Saved updates to {filepath}")
+        else:
+            print(f"No changes needed for {filepath}")
+
 def apply_suggestions_locally(task_results):
     """
     Improved naive approach:
@@ -840,7 +931,7 @@ def main():
 
     # 5) Optionally apply suggested changes in-place
     if args.apply_suggestions:
-        apply_suggestions_locally(task_results)
+        apply_suggestions_with_parser(task_results)
 
     # 6) If commit-changes is set, commit/push in the current or cloned repo
     if args.commit_changes:
