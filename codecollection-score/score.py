@@ -704,12 +704,12 @@ def apply_suggestions_locally(task_results):
         i = 0
         while i < len(updated_lines):
             line = updated_lines[i]
-            stripped = line.lstrip()
-
-            # 1) Check if we are starting a new test (a line that is neither blank nor starts with '[' nor '#')
+            stripped = line.strip()
+            
             if stripped and not stripped.startswith("[") and not stripped.startswith("#") and not stripped.startswith("..."):
-                # This is our guess for the test name line
+                # We assume this is a test name
                 current_test_name = stripped
+
 
             # 2) Check if we're entering a [Tags] block
             if not inside_tags_block:
