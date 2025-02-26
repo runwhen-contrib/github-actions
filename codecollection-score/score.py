@@ -410,7 +410,7 @@ def get_changed_robot_files(repo_dir, base_sha, head_sha):
 
     cmd = ["git", "diff", "--name-only", base_sha, head_sha]
     result = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, check=True)
-    changed = [line.strip() for line in result.stdout.splitlines() if line.strip().endswith(".robot")]
+    changed = [line.lstrip() for line in result.stdout.splitlines() if line.lstrip().endswith(".robot")]
     return [os.path.join(repo_dir, c) for c in changed]
 
 
@@ -704,7 +704,7 @@ def apply_suggestions_locally(task_results):
         i = 0
         while i < len(updated_lines):
             line = updated_lines[i]
-            stripped = line.strip()
+            stripped = line.lstrip()
 
             # 1) Check if we are starting a new test (a line that is neither blank nor starts with '[' nor '#')
             if stripped and not stripped.startswith("[") and not stripped.startswith("#") and not stripped.startswith("..."):
