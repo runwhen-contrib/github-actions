@@ -9,6 +9,7 @@ import tempfile
 import shutil
 
 from robot.api import TestSuite
+from robot.api.parsing import TestCaseSection
 from robot.api.parsing import get_model
 from tabulate import tabulate
 
@@ -649,7 +650,7 @@ def apply_suggestions_with_parser(task_results):
 
         # 2) Walk model.sections to find TestCaseSection
         for section in model.sections:
-            if section.type == 'TESTCASE':  # A TestCaseSection
+            if isinstance(section, TestCaseSection):
                 for testcase in section.body:
                     old_name = testcase.name
                     if old_name in tasks_map:
@@ -931,7 +932,7 @@ def main():
 
     # 5) Optionally apply suggested changes in-place
     if args.apply_suggestions:
-        apply_suggestions_with_parser(task_results)
+        apply_suggestions_locally(task_results)
 
     # 6) If commit-changes is set, commit/push in the current or cloned repo
     if args.commit_changes:
