@@ -1,0 +1,60 @@
+openapi: 3.0.0
+info:
+  title: Platform PublicAPI
+  version: 1.0.0
+paths:
+  /api/v3/codecollections/{name}/branches/{branch}:
+    get:
+      summary: get Branch Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/branches/{{branch}}/{path}:
+    get:
+      summary: get Repo Content Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/branches/{{branch}}/slxs:
+    get:
+      summary: get Slxs Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/codebundle-stats:
+    get:
+      summary: get Codebundle Stats Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/tmp:
+    get:
+      summary: get Detail Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/sync-status:
+    get:
+      summary: sync Status Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}:
+    get:
+      summary: retrieve Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections:
+    get:
+      summary: list Code Collections
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: page
+        in: query
+        description: A page number within the paginated result set.
+        required: false
+        schema:
+          type: string

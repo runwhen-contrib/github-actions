@@ -1,0 +1,69 @@
+openapi: 3.0.0
+info:
+  title: Platform PublicAPI
+  version: 1.0.0
+paths:
+  /api/v3/users/search:
+    get:
+      summary: search User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/activeworkspaces:
+    get:
+      summary: active Workspaces User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/activities/count:
+    get:
+      summary: activity Count User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/activities:
+    get:
+      summary: activities User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/stream:
+    get:
+      summary: stream User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}:
+    get:
+      summary: retrieve User
+      responses:
+        '200':
+          description: Success
+    put:
+      summary: update User
+      responses:
+        '200':
+          description: Success
+    patch:
+      summary: partial Update User
+      responses:
+        '200':
+          description: Success
+    delete:
+      summary: destroy User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users:
+    get:
+      summary: List Users
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: page
+        in: query
+        description: A page number within the paginated result set.
+        required: false
+        schema:
+          type: string

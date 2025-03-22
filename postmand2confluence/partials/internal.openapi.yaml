@@ -1,0 +1,11 @@
+openapi: 3.0.0
+info:
+  title: Platform PublicAPI
+  version: 1.0.0
+paths:
+  /api/v3/internal/{wid}/service-account-token:
+    get:
+      summary: Service Account Token
+      responses:
+        '200':
+          description: Success

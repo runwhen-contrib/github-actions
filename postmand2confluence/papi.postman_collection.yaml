@@ -1,0 +1,383 @@
+openapi: 3.0.0
+info:
+  title: Platform PublicAPI
+  version: 1.0.0
+paths:
+  /api/v3/codecollections/{name}/branches/{branch}:
+    get:
+      summary: get Branch Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/branches/{{branch}}/{path}:
+    get:
+      summary: get Repo Content Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/branches/{{branch}}/slxs:
+    get:
+      summary: get Slxs Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/codebundle-stats:
+    get:
+      summary: get Codebundle Stats Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/tmp:
+    get:
+      summary: get Detail Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}/sync-status:
+    get:
+      summary: sync Status Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections/{name}:
+    get:
+      summary: retrieve Code Collection
+      responses:
+        '200':
+          description: Success
+  /api/v3/codecollections:
+    get:
+      summary: list Code Collections
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: page
+        in: query
+        description: A page number within the paginated result set.
+        required: false
+        schema:
+          type: string
+  /api/v3/users/search:
+    get:
+      summary: search User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/activeworkspaces:
+    get:
+      summary: active Workspaces User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/activities/count:
+    get:
+      summary: activity Count User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/activities:
+    get:
+      summary: activities User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}/stream:
+    get:
+      summary: stream User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users/{id}:
+    get:
+      summary: retrieve User
+      responses:
+        '200':
+          description: Success
+    put:
+      summary: update User
+      responses:
+        '200':
+          description: Success
+    patch:
+      summary: partial Update User
+      responses:
+        '200':
+          description: Success
+    delete:
+      summary: destroy User
+      responses:
+        '200':
+          description: Success
+  /api/v3/users:
+    get:
+      summary: List Users
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: page
+        in: query
+        description: A page number within the paginated result set.
+        required: false
+        schema:
+          type: string
+  /api/v3/schemas/{resource_name}/explain:
+    get:
+      summary: explain CRM Schema View Set
+      responses:
+        '200':
+          description: Success
+  /api/v3/schemas/{resource_name}:
+    get:
+      summary: retrieve CRM Schema View Set
+      responses:
+        '200':
+          description: Success
+  /api/v3/parsecodebundle:
+    get:
+      summary: listparse codebundles
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: repoUrl
+        in: query
+        description: 'Query param: repoUrl'
+        required: false
+        schema:
+          type: string
+      - name: ref
+        in: query
+        description: 'Query param: ref'
+        required: false
+        schema:
+          type: string
+      - name: pathInRepo
+        in: query
+        description: 'Query param: pathInRepo'
+        required: false
+        schema:
+          type: string
+  /api/v3/workspaces/{wid}/slxs/{sid}/runbook/runs/{rrid}/runner-status:
+    get:
+      summary: Status
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/slxs/{sid}/runbook/runs/{rrid}/start:
+    post:
+      summary: Start
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/slxs/{sid}/runbook/runs/{rrid}:
+    patch:
+      summary: Step
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/runsessions/{rsid}/runrequests/{rqid}/mark-failed:
+    put:
+      summary: mark-failed
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/runsessions/{rid}/issues/{iid}/test:
+    get:
+      summary: Get Issue
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/runsessions/{rsid}:
+    patch:
+      summary: New request
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/runsessions:
+    post:
+      summary: Create
+      responses:
+        '200':
+          description: Success
+    get:
+      summary: List
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: page-size
+        in: query
+        description: 'Query param: page-size'
+        required: false
+        schema:
+          type: string
+      - name: modified__lte
+        in: query
+        description: 'Query param: modified__lte'
+        required: false
+        schema:
+          type: string
+      - name: runrequest__runbook__name
+        in: query
+        description: 'Query param: runrequest__runbook__name'
+        required: false
+        schema:
+          type: string
+  /api/v3/workspaces/{wid}/slxs/{sid}/sli/chart:
+    get:
+      summary: Sli Chart
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/runsessions/{rid}/issues/{iid}:
+    patch:
+      summary: Update issue
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/runsessions/{rid}/issues:
+    get:
+      summary: Get Issues
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/workflows/{id}/token:
+    get:
+      summary: Get Webhook Token
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/workflows/{id}/run:
+    post:
+      summary: Run
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/generate-workspace-builder-config:
+    get:
+      summary: Get Upload Config
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: hours
+        in: query
+        description: 'Query param: hours'
+        required: false
+        schema:
+          type: string
+  /api/v3/workspaces/{wid}/upload:
+    get:
+      summary: Upload
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/default-manifest/{type}:
+    get:
+      summary: defaut-manifest
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/reset-service-account:
+    post:
+      summary: Reset Workspace Service Account Password
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/integrate-slack:
+    post:
+      summary: Integrate Slack
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/sync-status:
+    get:
+      summary: Get Workspace Sync Status
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/index-status:
+    get:
+      summary: Get Workspace Index Status
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: detail
+        in: query
+        description: 'Query param: detail'
+        required: false
+        schema:
+          type: string
+  /api/v3/workspaces/{wid}/status:
+    get:
+      summary: Get Workspace Status
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/task-search:
+    post:
+      summary: Workspace Task Search
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/runner-token:
+    get:
+      summary: Get Runner Token
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}/slxoptions:
+    get:
+      summary: Get SLX Select Options
+      responses:
+        '200':
+          description: Success
+  /api/v3/workspaces/{wid}:
+    get:
+      summary: Get Workspace
+      responses:
+        '200':
+          description: Success
+  /api/v3/internal/{wid}/service-account-token:
+    get:
+      summary: Service Account Token
+      responses:
+        '200':
+          description: Success
+  /accounts/profile/{id}:
+    get:
+      summary: retrieve Profile
+      responses:
+        '200':
+          description: Success
+    put:
+      summary: update Profile
+      responses:
+        '200':
+          description: Success
+    patch:
+      summary: partial Update Profile
+      responses:
+        '200':
+          description: Success
+    delete:
+      summary: destroy Profile
+      responses:
+        '200':
+          description: Success
+  /accounts/profile:
+    get:
+      summary: list Profiles
+      responses:
+        '200':
+          description: Success
+      parameters:
+      - name: page
+        in: query
+        description: A page number within the paginated result set.
+        required: false
+        schema:
+          type: string

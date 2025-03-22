@@ -1,0 +1,17 @@
+openapi: 3.0.0
+info:
+  title: Platform PublicAPI
+  version: 1.0.0
+paths:
+  /api/v3/schemas/{resource_name}/explain:
+    get:
+      summary: explain CRM Schema View Set
+      responses:
+        '200':
+          description: Success
+  /api/v3/schemas/{resource_name}:
+    get:
+      summary: retrieve CRM Schema View Set
+      responses:
+        '200':
+          description: Success
