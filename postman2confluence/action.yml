@@ -65,23 +65,21 @@ inputs:
 runs:
   using: "composite"
   steps:
-    # 1) Check out code so we have scripts/ 
-    - name: Check out code
-      uses: actions/checkout@v3
+    # - name: Check out code
+    #   uses: actions/checkout@v3
 
-    # 2) Set up Python
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: "3.11"
 
-    # 3) Install Python dependencies
     - name: Install dependencies
       shell: bash
       run: |
-        pip install -r requirements.txt
+        pip install -r ${{ github.action_path }}/requirements.txt
 
-    # 4) Dynamically create config.yaml for postman2openapi.py 
+
+    #    Dynamically create config.yaml for postman2openapi.py 
     #    We'll directly echo user inputs into a file, 
     #    trusting that they're valid YAML arrays.
     - name: Create dynamic_config.yaml
@@ -94,23 +92,23 @@ runs:
         echo "Generated dynamic_config.yaml:"
         cat dynamic_config.yaml
 
-    # 5) Convert ALL Postman files -> OpenAPI using postman2openapi.py
+    #  Convert ALL Postman files -> OpenAPI using postman2openapi.py
     - name: Convert Postman -> OpenAPI
       shell: bash
       run: |
-        python scripts/postman2openapi.py \
+        python ${{ github.action_path }}/postman2openapi.py \
           --config dynamic_config.yaml \
           --search-dir .
         # This will produce .yaml for each source in the same folder(s) 
         # or wherever the script is coded to place them.
 
-    # 6) Now run openapi2confluence on the MAIN doc 
+    #    Now run openapi2confluence on the MAIN doc 
     #    If you have multiple docs, you can do a loop or 
     #    pick the main one (like "papi.postman_collection.yaml").
     - name: Upload to Confluence
       shell: bash
       run: |
-        python scripts/openapi2confluence.py \
+        python ${{ github.action_path }}/openapi2confluence.py \
           --confluence-base-url "${{ inputs.confluence-base-url }}" \
           --username "${{ inputs.confluence-username }}" \
           --api-token "${{ inputs.confluence-api-token }}" \
@@ -120,4 +118,4 @@ runs:
           --master-page-title "${{ inputs.master-page-title }}" \
           --partials-page-title "${{ inputs.partials-page-title }}" \
           --output-dir "partials_out" \
-          --template-file "${{ inputs.template-file }}"
+          --template-file "${{ github.action_path }}/scripts/templates/${{ inputs.template-file }}"
