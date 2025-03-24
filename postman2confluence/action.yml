@@ -128,8 +128,8 @@ runs:
               --space-key "${{ inputs.space-key }}" \
               --parent-page-id "${{ inputs.parent-page-id }}" \
               --master-file "$f" \
-              --master-page-title "$base" \
-              --partials-page-title "Endpoints" \
+              --master-page-title "$base API" \
+              --partials-page-title "$base Endpoints" \
               --output-dir "partials_out" \
               --template-file "${{ inputs.template-file }}"
           done
