@@ -223,8 +223,7 @@ def main():
     #    We'll write the output as the same base name with a .yaml extension in the same folder
     for fpath in matched_files:
         base_name = os.path.splitext(os.path.basename(fpath))[0]  
-        out_file = base_name + ".yaml"  # you can customize, e.g. .json if desired
-
+        out_file = "openapi/" + base_name + ".yaml"  
         convert_postman_to_openapi(
             postman_json_path=fpath,
             openapi_output_path=out_file,

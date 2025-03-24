@@ -113,14 +113,23 @@ runs:
     - name: Upload to Confluence
       shell: bash
       run: |
-        python ${{ github.action_path }}/scripts/openapi2confluence.py \
-          --confluence-base-url "${{ inputs.confluence-base-url }}" \
-          --username "${{ inputs.confluence-username }}" \
-          --api-token "${{ inputs.confluence-api-token }}" \
-          --space-key "${{ inputs.space-key }}" \
-          --parent-page-id "${{ inputs.parent-page-id }}" \
-          --master-file "papi.postman_collection.yaml" \
-          --master-page-title "${{ inputs.master-page-title }}" \
-          --partials-page-title "${{ inputs.partials-page-title }}" \
-          --output-dir "partials_out" \
-          --template-file "${{ inputs.template-file }}"
+         # Loop over each newly created .yaml file
+          for f in openapi/*.yaml; do
+            echo "Uploading $f to Confluence..."
+            base=$(basename "$f" .yaml | cut -d '.' -f1)
+            # We'll use dynamic page titles, e.g. "All APIs - $base"
+            # Or whatever you want. You can also pass user-defined 
+            # master-page-title if you prefer all under one name.
+
+            python scripts/openapi2confluence.py \
+              --confluence-base-url "${{ inputs.confluence-base-url }}" \
+              --username "${{ inputs.confluence-username }}" \
+              --api-token "${{ inputs.confluence-api-token }}" \
+              --space-key "${{ inputs.space-key }}" \
+              --parent-page-id "${{ inputs.parent-page-id }}" \
+              --master-file "$f" \
+              --master-page-title "$base" \
+              --partials-page-title "Endpoints" \
+              --output-dir "partials_out" \
+              --template-file "${{ inputs.template-file }}"
+          done
