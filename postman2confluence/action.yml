@@ -85,9 +85,9 @@ runs:
     - name: Create dynamic_config.yaml
       shell: bash
       run: |
-        echo "excluded_paths: ${ { inputs.exclude-paths } }" > dynamic_config.yaml
+        echo "excluded_paths: ${{ inputs.exclude-paths }}" > dynamic_config.yaml
         echo "" >> dynamic_config.yaml
-        echo "sources: ${ { inputs.postman-sources } }" >> dynamic_config.yaml
+        echo "sources: ${{ inputs.postman-sources }}" >> dynamic_config.yaml
 
         echo "Generated dynamic_config.yaml:"
         cat dynamic_config.yaml
