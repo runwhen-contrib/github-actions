@@ -21,9 +21,9 @@
 } %}
 
 {% for path, methods in openapi_paths.items() %}
-  <h2>{{ path }}</h2>
 
   {% for method, operation in methods.items() %}
+  <h2>{{ operation.summary }}</h2>
     <h3>
       <!-- Confluence status macro for the method -->
       <ac:structured-macro ac:name="status">
