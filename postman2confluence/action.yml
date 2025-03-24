@@ -121,7 +121,7 @@ runs:
             # Or whatever you want. You can also pass user-defined 
             # master-page-title if you prefer all under one name.
 
-            python scripts/openapi2confluence.py \
+            python ${{ github.action_path }}/scripts/openapi2confluence.py \
               --confluence-base-url "${{ inputs.confluence-base-url }}" \
               --username "${{ inputs.confluence-username }}" \
               --api-token "${{ inputs.confluence-api-token }}" \
