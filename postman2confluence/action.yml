@@ -96,7 +96,7 @@ runs:
     - name: Convert Postman -> OpenAPI
       shell: bash
       run: |
-        python ${{ github.action_path }}/postman2openapi.py \
+        python ${{ github.action_path }}/scripts/postman2openapi.py \
           --config dynamic_config.yaml \
           --search-dir .
         # This will produce .yaml for each source in the same folder(s) 
@@ -108,7 +108,7 @@ runs:
     - name: Upload to Confluence
       shell: bash
       run: |
-        python ${{ github.action_path }}/openapi2confluence.py \
+        python ${{ github.action_path }}/scripts/openapi2confluence.py \
           --confluence-base-url "${{ inputs.confluence-base-url }}" \
           --username "${{ inputs.confluence-username }}" \
           --api-token "${{ inputs.confluence-api-token }}" \
