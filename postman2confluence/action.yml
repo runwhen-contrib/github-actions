@@ -77,8 +77,9 @@ runs:
 
     # 3) Install Python dependencies
     - name: Install dependencies
+      shell: bash
       run: |
-        pip install pyyaml requests jinja2
+        pip install -r requirements.txt
 
     # 4) Dynamically create config.yaml for postman2openapi.py 
     #    We'll directly echo user inputs into a file, 
@@ -95,6 +96,7 @@ runs:
 
     # 5) Convert ALL Postman files -> OpenAPI using postman2openapi.py
     - name: Convert Postman -> OpenAPI
+      shell: bash
       run: |
         python scripts/postman2openapi.py \
           --config dynamic_config.yaml \
@@ -106,6 +108,7 @@ runs:
     #    If you have multiple docs, you can do a loop or 
     #    pick the main one (like "papi.postman_collection.yaml").
     - name: Upload to Confluence
+      shell: bash
       run: |
         python scripts/openapi2confluence.py \
           --confluence-base-url "${{ inputs.confluence-base-url }}" \
