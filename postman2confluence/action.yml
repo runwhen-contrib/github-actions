@@ -76,7 +76,7 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        pip install -r ${{ github.action_path }}/requirements.txt
+        pip install -r ${{ github.action_path }}/scripts/requirements.txt
 
 
     #    Dynamically create config.yaml for postman2openapi.py 
