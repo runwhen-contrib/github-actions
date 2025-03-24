@@ -203,7 +203,7 @@ def main():
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f) or {}
     excluded_paths = config.get("excluded_paths", [])
-    sources = config.get("sources", [])
+    sources = config.get("postman-sources", [])
 
     # 2) Recursively walk `search-dir` looking for files that match `sources`
     matched_files = []
@@ -219,11 +219,12 @@ def main():
 
     print(f"Found these files matching config sources:\n  " + "\n  ".join(matched_files))
 
-    # 3) For each matched file, convert Postman -> OpenAPI
-    #    We'll write the output as the same base name with a .yaml extension in the same folder
+    output_dir = "openapi"
+    os.makedirs(output_dir, exist_ok=True)
+
     for fpath in matched_files:
         base_name = os.path.splitext(os.path.basename(fpath))[0]  
-        out_file = "openapi/" + base_name + ".yaml"  
+        out_file = os.path.join(output_dir, base_name + ".yaml")  
         convert_postman_to_openapi(
             postman_json_path=fpath,
             openapi_output_path=out_file,
