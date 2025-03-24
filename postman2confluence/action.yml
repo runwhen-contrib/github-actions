@@ -123,4 +123,4 @@ runs:
           --master-page-title "${{ inputs.master-page-title }}" \
           --partials-page-title "${{ inputs.partials-page-title }}" \
           --output-dir "partials_out" \
-          --template-file "${{ github.action_path }}/scripts/templates/${{ inputs.template-file }}"
+          --template-file "${{ inputs.template-file }}"
