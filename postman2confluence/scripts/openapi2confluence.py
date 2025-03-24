@@ -20,6 +20,8 @@ def get_jinja_env():
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     template_dir = os.path.join(script_dir, "templates")
+    print("DEBUG: Looking for templates in:", template_dir)
+    print("DEBUG: Found these files:", os.listdir(template_dir))
     return Environment(loader=FileSystemLoader(template_dir), trim_blocks=True, lstrip_blocks=True)
 
 def render_entire_file_as_text(template_env, template_file, file_path, attachment_filename=None):
