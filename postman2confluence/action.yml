@@ -90,7 +90,7 @@ runs:
 
         echo "" >> dynamic_config.yaml
 
-        echo "sources:" >> dynamic_config.yaml
+        echo "postman-sources:" >> dynamic_config.yaml
         echo "${{ inputs.postman-sources }}" >> dynamic_config.yaml
 
         echo "Generated dynamic_config.yaml:"
