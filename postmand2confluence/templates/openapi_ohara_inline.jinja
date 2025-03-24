@@ -1,0 +1,16 @@
+{% raw %}<ac:structured-macro ac:name="open-api">
+  <!-- Everything is defined here, so no script-based arguments. -->
+  <ac:parameter ac:name="displayOperationId">true</ac:parameter>
+  <ac:parameter ac:name="tryItOutEnabled">true</ac:parameter>
+  <ac:parameter ac:name="showDownloadButton">true</ac:parameter>
+
+  <!-- If you have other ohara parameters, add them here. E.g.: -->
+  <!-- <ac:parameter ac:name="tagsSorter">alpha</ac:parameter> -->
+  <!-- <ac:parameter ac:name="syntaxHighlightTheme">obsidian</ac:parameter> -->
+
+  <ac:plain-text-body><![CDATA[
+{% endraw %}
+{{ openapi_text }}
+{% raw %}
+]]></ac:plain-text-body>
+</ac:structured-macro>{% endraw %}

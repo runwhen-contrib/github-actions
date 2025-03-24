@@ -341,12 +341,6 @@ paths:
       responses:
         '200':
           description: Success
-  /api/v3/internal/{wid}/service-account-token:
-    get:
-      summary: Service Account Token
-      responses:
-        '200':
-          description: Success
   /accounts/profile/{id}:
     get:
       summary: retrieve Profile

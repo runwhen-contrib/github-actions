@@ -1,0 +1,68 @@
+<h1>{{ doc_title }}</h1>
+<p>{{ doc_description }}</p>
+
+<!-- Download Link for the OpenAPI JSON attachment -->
+<p>
+  Download the OpenAPI JSON file:
+  <ac:link>
+    <!-- 'openapi_json_filename' is the attachment name you're expecting to have on the page -->
+    <!-- <ri:attachment ri:filename="{{ openapi_json_filename }}"/> -->
+    <!-- <ac:plain-text-link-body><![CDATA[{{ openapi_json_filename }}]]></ac:plain-text-link-body> -->
+  </ac:link>
+</p>
+
+<!-- We'll define a small dictionary mapping methods to color choices for the <ac:structured-macro ac:name="status"> -->
+{% set method_colors = {
+  'get': 'Blue',
+  'post': 'Green',
+  'put': 'Yellow',
+  'delete': 'Red',
+  'patch': 'Grey'
+} %}
+
+{% for path, methods in openapi_paths.items() %}
+  <h2>{{ path }}</h2>
+
+  {% for method, operation in methods.items() %}
+    <h3>
+      <!-- Confluence status macro for the method -->
+      <ac:structured-macro ac:name="status">
+        <ac:parameter ac:name="colour">{{ method_colors.get(method, 'Grey') }}</ac:parameter>
+        <ac:parameter ac:name="title">{{ method|upper }}</ac:parameter>
+      </ac:structured-macro>
+      &nbsp; {{ path }}
+    </h3>
+
+    <p>{{ operation.summary }}</p>
+
+    <!-- Expand block for request example, if present -->
+    {% if operation.requestExample %}
+    <ac:structured-macro ac:name="expand">
+      <ac:parameter ac:name="title">Request Example</ac:parameter>
+      <ac:rich-text-body>
+        <ac:structured-macro ac:name="code">
+          <ac:parameter ac:name="language">json</ac:parameter>
+          <ac:plain-text-body><![CDATA[
+{{ operation.requestExample }}
+]]></ac:plain-text-body>
+        </ac:structured-macro>
+      </ac:rich-text-body>
+    </ac:structured-macro>
+    {% endif %}
+
+    <!-- Expand block for response example, if present -->
+    {% if operation.responseExample %}
+    <ac:structured-macro ac:name="expand">
+      <ac:parameter ac:name="title">Response Example</ac:parameter>
+      <ac:rich-text-body>
+        <ac:structured-macro ac:name="code">
+          <ac:parameter ac:name="language">json</ac:parameter>
+          <ac:plain-text-body><![CDATA[
+{{ operation.responseExample }}
+]]></ac:plain-text-body>
+        </ac:structured-macro>
+      </ac:rich-text-body>
+    </ac:structured-macro>
+    {% endif %}
+  {% endfor %}
+{% endfor %}
