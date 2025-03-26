@@ -84,15 +84,19 @@ runs:
       run: |
         if [ "${{ inputs.only_changed }}" = "true" ]; then
           if [ -z "${{ inputs.base_sha }}" ] && [ -z "${{ inputs.head_sha }}" ]; then
-            echo "No base/head SHA provided; defaulting to HEAD~1...HEAD."
-            echo "base_sha=HEAD~1" >> $GITHUB_OUTPUT
-            echo "head_sha=HEAD" >> $GITHUB_OUTPUT
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "base_sha=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
+              echo "head_sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+            else
+              echo "No base/head SHA provided and not a PR; defaulting to HEAD~1...HEAD."
+              echo "base_sha=HEAD~1" >> $GITHUB_OUTPUT
+              echo "head_sha=HEAD" >> $GITHUB_OUTPUT
+            fi
           else
             echo "base_sha=${{ inputs.base_sha }}" >> $GITHUB_OUTPUT
             echo "head_sha=${{ inputs.head_sha }}" >> $GITHUB_OUTPUT
           fi
         else
-          # If not only_changed, empty them
           echo "base_sha=" >> $GITHUB_OUTPUT
           echo "head_sha=" >> $GITHUB_OUTPUT
         fi
