@@ -212,7 +212,7 @@ def query_openai(prompt):
 
 def suggest_access_tag(title, doc, tags):
     """
-    Use the LLM to suggest either 'access:readonly' or 'access:read-write'
+    Use the LLM to suggest either 'access:read-only' or 'access:read-write'
     based on the task's content.
     """
     prompt = f"""
@@ -221,20 +221,20 @@ Given the following task data:
 - Documentation: "{doc}"
 - Existing tags: {tags}
 
-Decide if this task only reads/collects data (=> "access:readonly")
+Decide if this task only reads/collects data (=> "access:read-only")
 or modifies/updates resources (=> "access:read-write").
 
-Return JSON: {{ "suggested_access_tag": "access:readonly" }} or "access:read-write".
+Return JSON: {{ "suggested_access_tag": "access:read-only" }} or "access:read-write".
 """
     response_text = query_openai(prompt)
     if not response_text or response_text == "Response unavailable":
-        return "access:readonly"  # fallback
+        return "access:read-only"  # fallback
 
     try:
         parsed = json.loads(response_text)
-        return parsed.get("suggested_access_tag", "access:readonly")
+        return parsed.get("suggested_access_tag", "access:read-only")
     except (ValueError, json.JSONDecodeError):
-        return "access:readonly"
+        return "access:read-only"
 
 
 # --------------------------------------------------------------------------------
@@ -380,7 +380,7 @@ def lint_codebundle(settings_info, tasks, is_runbook, is_sli):
                 reasons.append(f"Runbook task '{t['name']}' neither adds an issue nor a pre-report.")
 
         # Access tag check
-        if not any(tag.lower() in ("access:readonly", "access:read-write") for tag in t["tags"]):
+        if not any(tag.lower() in ("access:read-only", "access:read-write") for tag in t["tags"]):
             score -= 1
             reasons.append(f"Task '{t['name']}' missing required 'access:...' tag.")
 
@@ -485,7 +485,7 @@ def analyze_codebundles(robot_files):
                 )
 
             # If missing an access tag, suggest one
-            has_access_tag = any(tag.lower() in ("access:readonly", "access:read-write") for tag in t["tags"])
+            has_access_tag = any(tag.lower() in ("access:read-only", "access:read-write") for tag in t["tags"])
             suggested_access_tag = ""
             if not has_access_tag:
                 suggested_access_tag = suggest_access_tag(t["name"], t["doc"], t["tags"])
