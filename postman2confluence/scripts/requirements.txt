@@ -1,0 +1,4 @@
+GitPython
+requests
+PyYAML 
+jinja2

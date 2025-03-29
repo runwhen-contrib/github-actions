@@ -1,0 +1,135 @@
+name: "Postman -> OpenAPI -> Confluence (lists-based config)"
+description: >
+  Dynamically creates a config.yaml from user-supplied YAML lists (for multiple Postman sources and excludes),
+  runs postman2openapi.py, then runs openapi2confluence.py.
+
+inputs:
+  postman-sources:
+    description: |
+      A YAML array of Postman JSON files to convert, e.g.:
+
+      ```
+      - "papi.postman_collection.json"
+      - "my-other-collection.json"
+      ```
+    required: true
+
+  exclude-paths:
+    description: |
+      A YAML array of paths to exclude, e.g.:
+
+      ```
+      - "/api/v1"
+      - "/api/v2/old"
+      ```
+    required: false
+    default: |
+      []
+
+  confluence-base-url:
+    description: "Confluence base URL, e.g. https://yoursite.atlassian.net/wiki"
+    required: true
+
+  confluence-username:
+    description: "Username/email for Confluence"
+    required: true
+
+  confluence-api-token:
+    description: "API token for Confluence"
+    required: true
+
+  space-key:
+    description: "Confluence space key, e.g. DOC"
+    required: true
+
+  parent-page-id:
+    description: "Optional: ID of the parent page"
+    required: false
+    default: ""
+
+  master-page-title:
+    description: "Title for the master page"
+    required: false
+    default: "Platform Public API"
+
+  partials-page-title:
+    description: "Title for partial docs"
+    required: false
+    default: "API Endpoints"
+
+  template-file:
+    description: "Which Jinja template to use, e.g. custom_confluence.jinja"
+    required: false
+    default: "custom_confluence.jinja"
+
+runs:
+  using: "composite"
+  steps:
+    # - name: Check out code
+    #   uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install -r ${{ github.action_path }}/scripts/requirements.txt
+
+
+    #    Dynamically create config.yaml for postman2openapi.py 
+    #    We'll directly echo user inputs into a file, 
+    #    trusting that they're valid YAML arrays.
+    - name: Create dynamic_config.yaml
+      shell: bash
+      run: |
+        echo "excluded_paths:" > dynamic_config.yaml
+        echo "${{ inputs.exclude-paths }}" >> dynamic_config.yaml
+
+        echo "" >> dynamic_config.yaml
+
+        echo "postman-sources:" >> dynamic_config.yaml
+        echo "${{ inputs.postman-sources }}" >> dynamic_config.yaml
+
+        echo "Generated dynamic_config.yaml:"
+        cat dynamic_config.yaml
+
+
+    #  Convert ALL Postman files -> OpenAPI using postman2openapi.py
+    - name: Convert Postman -> OpenAPI
+      shell: bash
+      run: |
+        python ${{ github.action_path }}/scripts/postman2openapi.py \
+          --config dynamic_config.yaml \
+          --search-dir .
+        # This will produce .yaml for each source in the same folder(s) 
+        # or wherever the script is coded to place them.
+
+    #    Now run openapi2confluence on the MAIN doc 
+    #    If you have multiple docs, you can do a loop or 
+    #    pick the main one (like "papi.postman_collection.yaml").
+    - name: Upload to Confluence
+      shell: bash
+      run: |
+         # Loop over each newly created .yaml file
+          for f in openapi/*.yaml; do
+            echo "Uploading $f to Confluence..."
+            base=$(basename "$f" .yaml | cut -d '.' -f1)
+            # We'll use dynamic page titles, e.g. "All APIs - $base"
+            # Or whatever you want. You can also pass user-defined 
+            # master-page-title if you prefer all under one name.
+
+            python ${{ github.action_path }}/scripts/openapi2confluence.py \
+              --confluence-base-url "${{ inputs.confluence-base-url }}" \
+              --username "${{ inputs.confluence-username }}" \
+              --api-token "${{ inputs.confluence-api-token }}" \
+              --space-key "${{ inputs.space-key }}" \
+              --parent-page-id "${{ inputs.parent-page-id }}" \
+              --master-file "$f" \
+              --master-page-title "$base API" \
+              --partials-page-title "$base Endpoints" \
+              --output-dir "partials_out" \
+              --template-file "${{ inputs.template-file }}"
+          done
