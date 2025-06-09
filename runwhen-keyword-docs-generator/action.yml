@@ -81,5 +81,13 @@ runs:
           echo "No documentation changes to commit"
         else
           git commit -m "${{ inputs.commit_message }}"
-          git push
+          
+          # Handle push for both regular branches and PRs
+          if [ -n "${{ github.head_ref }}" ]; then
+            # This is a pull request
+            git push origin HEAD:${{ github.head_ref }}
+          else
+            # This is a direct push to main/other branch
+            git push
+          fi
         fi 
