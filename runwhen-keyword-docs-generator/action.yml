@@ -1,0 +1,85 @@
+name: 'RunWhen Keyword Documentation Generator'
+description: 'Generates SDK-style documentation from RunWhen CodeCollection keyword libraries and updates documentation in specified format'
+
+inputs:
+  doc_type:
+    description: 'Type of documentation to generate (markdown, confluence, or both)'
+    required: false
+    default: 'markdown'
+  confluence_url:
+    description: 'Confluence instance URL (required if doc_type is confluence or both)'
+    required: false
+  confluence_username:
+    description: 'Confluence username (required if doc_type is confluence or both)'
+    required: false
+  confluence_api_token:
+    description: 'Confluence API token (required if doc_type is confluence or both)'
+    required: false
+  confluence_space_key:
+    description: 'Confluence space key (required if doc_type is confluence or both)'
+    required: false
+  confluence_parent_page_id:
+    description: 'Parent page ID where documentation will be created (required if doc_type is confluence or both)'
+    required: false
+  libraries_path:
+    description: 'Path to the libraries directory'
+    required: false
+    default: 'libraries'
+  commit_changes:
+    description: 'Whether to commit generated documentation back to the repository'
+    required: false
+    default: 'true'
+  commit_message:
+    description: 'Commit message for documentation changes'
+    required: false
+    default: 'docs: update keyword documentation'
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Fetch all history for proper versioning
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r runwhen-keyword-docs-generator/requirements.txt
+        
+    - name: Generate Documentation
+      shell: bash
+      env:
+        DOC_TYPE: ${{ inputs.doc_type }}
+        CONFLUENCE_URL: ${{ inputs.confluence_url }}
+        CONFLUENCE_USERNAME: ${{ inputs.confluence_username }}
+        CONFLUENCE_API_TOKEN: ${{ inputs.confluence_api_token }}
+        CONFLUENCE_SPACE_KEY: ${{ inputs.confluence_space_key }}
+        CONFLUENCE_PARENT_PAGE_ID: ${{ inputs.confluence_parent_page_id }}
+        LIBRARIES_PATH: ${{ inputs.libraries_path }}
+      run: |
+        python runwhen-keyword-docs-generator/generate_docs.py
+
+    - name: Configure Git
+      if: ${{ inputs.commit_changes == 'true' }}
+      shell: bash
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: Commit Documentation Changes
+      if: ${{ inputs.commit_changes == 'true' }}
+      shell: bash
+      run: |
+        git add docs/
+        if git diff --staged --quiet; then
+          echo "No documentation changes to commit"
+        else
+          git commit -m "${{ inputs.commit_message }}"
+          git push
+        fi 
