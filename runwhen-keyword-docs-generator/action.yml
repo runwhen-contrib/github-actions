@@ -100,4 +100,5 @@ runs:
           echo "No documentation changes to commit"
         else
           git commit -m "${{ inputs.commit_message }}"
-          git push origin HEAD 
+          git push origin HEAD
+        fi 
