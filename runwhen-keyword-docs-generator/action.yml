@@ -72,6 +72,25 @@ runs:
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
+    - name: Setup Branch for Commit
+      if: ${{ inputs.commit_changes == 'true' }}
+      shell: bash
+      run: |
+        # Ensure we're on a proper branch before committing
+        if [ -n "${{ github.head_ref }}" ]; then
+          # This is a pull request - checkout the PR branch
+          echo "Checking out PR branch: ${{ github.head_ref }}"
+          git checkout -B ${{ github.head_ref }}
+        else
+          # This is a direct push - ensure we're on the target branch
+          current_branch=$(git rev-parse --abbrev-ref HEAD)
+          if [ "$current_branch" = "HEAD" ]; then
+            # We're in detached HEAD - checkout main
+            echo "In detached HEAD, checking out main branch"
+            git checkout -B main
+          fi
+        fi
+
     - name: Commit Documentation Changes
       if: ${{ inputs.commit_changes == 'true' }}
       shell: bash
@@ -81,13 +100,4 @@ runs:
           echo "No documentation changes to commit"
         else
           git commit -m "${{ inputs.commit_message }}"
-          
-          # Handle push for both regular branches and PRs
-          if [ -n "${{ github.head_ref }}" ]; then
-            # This is a pull request
-            git push origin HEAD:${{ github.head_ref }}
-          else
-            # This is a direct push to main/other branch
-            git push
-          fi
-        fi 
+          git push origin HEAD 
