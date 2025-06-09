@@ -39,7 +39,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}  # Checkout PR branch
       
       - name: Generate Keyword Documentation
-        uses: ./.github/actions/runwhen-keyword-docs-generator
+        uses: runwhen-contrib/runwhen-keyword-docs-generator@v1
         with:
           # Documentation type (markdown, confluence, or both)
           doc_type: 'markdown'  # Optional, defaults to 'markdown'
@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@v3
       
       - name: Generate Keyword Documentation
-        uses: ./.github/actions/runwhen-keyword-docs-generator
+        uses: runwhen-contrib/runwhen-keyword-docs-generator@v1
         with:
           doc_type: ${{ github.event.inputs.doc_type }}
           libraries_path: ${{ github.event.inputs.libraries_path }}
