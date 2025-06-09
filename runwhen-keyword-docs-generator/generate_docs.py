@@ -190,35 +190,7 @@ class DocumentationGenerator:
         # Remove empty categories
         return {cat: keywords for cat, keywords in categories.items() if keywords}
 
-    def _generate_robot_example(self, keyword):
-        """Generate Robot Framework syntax example for a keyword."""
-        keyword_name = keyword['name']
-        args = keyword['arguments']
-        
-        # Create a realistic Robot Framework example
-        example = f"${{{keyword_name.lower().replace('.', '_')}_result}}=    {keyword_name}"
-        
-        if args:
-            # Add example arguments
-            example_args = []
-            for arg in args[:3]:  # Limit to first 3 args for readability
-                if 'path' in arg.lower() or 'file' in arg.lower():
-                    example_args.append("/path/to/file")
-                elif 'url' in arg.lower():
-                    example_args.append("https://example.com")
-                elif 'name' in arg.lower():
-                    example_args.append("example-name")
-                elif 'namespace' in arg.lower():
-                    example_args.append("default")
-                else:
-                    example_args.append(f"${{{arg}}}")
-            
-            if len(args) > 3:
-                example_args.append("...")
-            
-            example += "    " + "    ".join(example_args)
-        
-        return example
+
 
     def generate_markdown(self, libraries):
         """Generate markdown documentation from parsed libraries."""
@@ -296,16 +268,10 @@ class DocumentationGenerator:
                                 md_content += f"- {ret}\n"
                             md_content += "\n"
                         
-                        # Add Robot Framework example
-                        md_content += "**Robot Framework Example:**\n\n"
-                        md_content += "```robotframework\n"
-                        md_content += self._generate_robot_example(keyword)
-                        md_content += "\n```\n\n"
-                        
-                        # Add original examples if available
+                        # Add original examples if found in docstring
                         if keyword['examples']:
-                            md_content += "**Additional Examples:**\n\n"
-                            md_content += "```python\n"
+                            md_content += "**Examples:**\n\n"
+                            md_content += "```\n"
                             for example in keyword['examples']:
                                 md_content += f"{example}\n"
                             md_content += "```\n\n"
