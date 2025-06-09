@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import os
-import yaml
-import json
+import ast
+import inspect
 from pathlib import Path
 from atlassian import Confluence
 import markdown
@@ -49,174 +49,277 @@ class DocumentationGenerator:
         self.parent_page_id = os.getenv('CONFLUENCE_PARENT_PAGE_ID')
 
     def parse_library_files(self):
-        """Parse all library files and extract keyword documentation."""
+        """Parse all Python library files and extract keyword documentation."""
         libraries = {}
         lib_path = Path(self.libraries_path)
         
         if not lib_path.exists():
             raise FileNotFoundError(f"Libraries directory not found at {self.libraries_path}")
 
-        for file_path in lib_path.rglob('*.robot'):
+        for file_path in lib_path.rglob('*.py'):
+            # Skip __init__.py and other special files
+            if file_path.name.startswith('__'):
+                continue
+                
             library_name = file_path.stem
-            libraries[library_name] = self._extract_keywords(file_path)
+            try:
+                keywords = self._extract_keywords_from_python(file_path)
+                if keywords:  # Only add if we found keywords
+                    libraries[library_name] = keywords
+            except Exception as e:
+                logger.warning(f"Error parsing {file_path}: {e}")
+                continue
             
         return libraries
 
-    def _extract_keywords(self, file_path):
-        """Extract keywords and their documentation from a Robot Framework file."""
+    def _extract_keywords_from_python(self, file_path):
+        """Extract keywords and their documentation from a Python file."""
         keywords = []
-        current_keyword = None
-        current_doc = []
-        current_args = []
-        current_returns = []
-        current_examples = []
-        in_documentation = False
-        in_examples = False
         
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
             
-        for line in lines:
-            line = line.strip()
+            # Parse the Python file
+            tree = ast.parse(content)
             
-            # Skip empty lines and comments
-            if not line or line.startswith('#'):
-                continue
+            # Extract keywords from classes and functions
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    # Skip private methods
+                    if node.name.startswith('_'):
+                        continue
+                    
+                    keyword = self._parse_function_as_keyword(node, content)
+                    if keyword:
+                        keywords.append(keyword)
                 
-            # Check for section headers
-            if line.startswith('***'):
-                if current_keyword:
-                    keywords.append(self._create_keyword_entry(
-                        current_keyword, current_doc, current_args,
-                        current_returns, current_examples
-                    ))
-                current_keyword = None
-                current_doc = []
-                current_args = []
-                current_returns = []
-                current_examples = []
-                in_documentation = False
-                in_examples = False
-                continue
-                
-            # Start of a new keyword
-            if not line.startswith(' '):
-                if current_keyword:
-                    keywords.append(self._create_keyword_entry(
-                        current_keyword, current_doc, current_args,
-                        current_returns, current_examples
-                    ))
-                current_keyword = line
-                current_doc = []
-                current_args = []
-                current_returns = []
-                current_examples = []
-                in_documentation = False
-                in_examples = False
-                continue
-                
-            # Documentation section
-            if line.startswith('    [Documentation]'):
-                in_documentation = True
-                in_examples = False
-                doc_text = line.replace('[Documentation]', '').strip()
-                if doc_text:
-                    current_doc.append(doc_text)
-                continue
-                
-            # Arguments section
-            if line.startswith('    [Arguments]'):
-                in_documentation = False
-                in_examples = False
-                args_text = line.replace('[Arguments]', '').strip()
-                if args_text:
-                    current_args.extend([arg.strip() for arg in args_text.split('${') if arg.strip()])
-                continue
-                
-            # Return values section
-            if line.startswith('    [Return]'):
-                in_documentation = False
-                in_examples = False
-                returns_text = line.replace('[Return]', '').strip()
-                if returns_text:
-                    current_returns.append(returns_text)
-                continue
-                
-            # Examples section
-            if line.startswith('    # Example:'):
-                in_documentation = False
-                in_examples = True
-                example_text = line.replace('# Example:', '').strip()
-                if example_text:
-                    current_examples.append(example_text)
-                continue
-                
-            # Continue documentation or examples
-            if in_documentation and line.startswith('    '):
-                current_doc.append(line.strip())
-            elif in_examples and line.startswith('    '):
-                current_examples.append(line.strip())
-                
-        # Add the last keyword if exists
-        if current_keyword:
-            keywords.append(self._create_keyword_entry(
-                current_keyword, current_doc, current_args,
-                current_returns, current_examples
-            ))
+                elif isinstance(node, ast.ClassDef):
+                    # Extract methods from classes
+                    for item in node.body:
+                        if isinstance(item, ast.FunctionDef) and not item.name.startswith('_'):
+                            keyword = self._parse_function_as_keyword(item, content, class_name=node.name)
+                            if keyword:
+                                keywords.append(keyword)
+        
+        except Exception as e:
+            logger.error(f"Error parsing Python file {file_path}: {e}")
+            return []
             
         return keywords
 
-    def _create_keyword_entry(self, name, doc, args, returns, examples):
-        """Create a structured keyword entry."""
+    def _parse_function_as_keyword(self, func_node, content, class_name=None):
+        """Parse a function node as a Robot Framework keyword."""
+        keyword_name = func_node.name
+        if class_name:
+            keyword_name = f"{class_name}.{keyword_name}"
+        
+        # Extract docstring
+        docstring = ast.get_docstring(func_node) or ""
+        
+        # Extract arguments
+        arguments = []
+        for arg in func_node.args.args:
+            if arg.arg != 'self':  # Skip self parameter
+                arguments.append(arg.arg)
+        
+        # Extract return information from docstring
+        returns = []
+        examples = []
+        
+        if docstring:
+            # Look for return information in docstring
+            return_match = re.search(r'(?:Returns?|Return value):\s*(.+)', docstring, re.IGNORECASE)
+            if return_match:
+                returns.append(return_match.group(1).strip())
+            
+            # Look for examples in docstring
+            example_matches = re.findall(r'(?:Example|Examples?):\s*\n(.+?)(?:\n\n|\n[A-Z]|\Z)', docstring, re.DOTALL | re.IGNORECASE)
+            for match in example_matches:
+                examples.extend([line.strip() for line in match.split('\n') if line.strip()])
+        
+        # Clean up docstring - remove Returns and Examples sections for main documentation
+        clean_doc = re.sub(r'(?:Returns?|Return value):\s*.+', '', docstring, flags=re.IGNORECASE)
+        clean_doc = re.sub(r'(?:Example|Examples?):\s*\n.+', '', clean_doc, flags=re.DOTALL | re.IGNORECASE)
+        clean_doc = clean_doc.strip()
+        
         return {
-            'name': name,
-            'documentation': '\n'.join(doc).strip(),
-            'arguments': args,
+            'name': keyword_name,
+            'documentation': clean_doc,
+            'arguments': arguments,
             'returns': returns,
             'examples': examples
         }
+
+    def _categorize_keywords(self, libraries):
+        """Categorize keywords by functionality for better organization."""
+        categories = {
+            'Core Operations': [],
+            'Kubernetes': [],
+            'File Operations': [],
+            'HTTP/API': [],
+            'Cloud Services': [],
+            'Monitoring & Metrics': [],
+            'Utilities': [],
+            'Other': []
+        }
+        
+        for lib_name, keywords in libraries.items():
+            for keyword in keywords:
+                name = keyword['name'].lower()
+                doc = keyword['documentation'].lower()
+                
+                # Categorize based on keyword name and documentation
+                if any(term in name or term in doc for term in ['k8s', 'kubernetes', 'kubectl', 'pod', 'deployment', 'service']):
+                    categories['Kubernetes'].append((lib_name, keyword))
+                elif any(term in name or term in doc for term in ['http', 'api', 'request', 'curl', 'rest', 'endpoint']):
+                    categories['HTTP/API'].append((lib_name, keyword))
+                elif any(term in name or term in doc for term in ['file', 'path', 'directory', 'folder', 'read', 'write']):
+                    categories['File Operations'].append((lib_name, keyword))
+                elif any(term in name or term in doc for term in ['aws', 'gcp', 'azure', 'cloud', 's3', 'ec2']):
+                    categories['Cloud Services'].append((lib_name, keyword))
+                elif any(term in name or term in doc for term in ['metric', 'monitor', 'alert', 'prometheus', 'grafana']):
+                    categories['Monitoring & Metrics'].append((lib_name, keyword))
+                elif any(term in name or term in doc for term in ['rw.core', 'core', 'issue', 'report', 'runbook']):
+                    categories['Core Operations'].append((lib_name, keyword))
+                elif any(term in name or term in doc for term in ['parse', 'format', 'convert', 'utility', 'helper']):
+                    categories['Utilities'].append((lib_name, keyword))
+                else:
+                    categories['Other'].append((lib_name, keyword))
+        
+        # Remove empty categories
+        return {cat: keywords for cat, keywords in categories.items() if keywords}
+
+    def _generate_robot_example(self, keyword):
+        """Generate Robot Framework syntax example for a keyword."""
+        keyword_name = keyword['name']
+        args = keyword['arguments']
+        
+        # Create a realistic Robot Framework example
+        example = f"${{{keyword_name.lower().replace('.', '_')}_result}}=    {keyword_name}"
+        
+        if args:
+            # Add example arguments
+            example_args = []
+            for arg in args[:3]:  # Limit to first 3 args for readability
+                if 'path' in arg.lower() or 'file' in arg.lower():
+                    example_args.append("/path/to/file")
+                elif 'url' in arg.lower():
+                    example_args.append("https://example.com")
+                elif 'name' in arg.lower():
+                    example_args.append("example-name")
+                elif 'namespace' in arg.lower():
+                    example_args.append("default")
+                else:
+                    example_args.append(f"${{{arg}}}")
+            
+            if len(args) > 3:
+                example_args.append("...")
+            
+            example += "    " + "    ".join(example_args)
+        
+        return example
 
     def generate_markdown(self, libraries):
         """Generate markdown documentation from parsed libraries."""
         md_content = "# RunWhen CodeCollection Libraries Documentation\n\n"
         
+        # Overview section
+        md_content += "## Overview\n\n"
+        md_content += "This documentation covers the Python libraries that provide Robot Framework keywords for the RunWhen CodeCollection. "
+        md_content += "These keywords are designed to help you create effective runbooks and SLIs for troubleshooting and monitoring.\n\n"
+        
+        # Quick stats
+        total_keywords = sum(len(keywords) for keywords in libraries.values())
+        md_content += f"**Total Libraries:** {len(libraries)}  \n"
+        md_content += f"**Total Keywords:** {total_keywords}\n\n"
+        
+        # Getting started section
+        md_content += "## Getting Started\n\n"
+        md_content += "To use these keywords in your Robot Framework files:\n\n"
+        md_content += "1. Import the library in your Robot Framework file\n"
+        md_content += "2. Use the keywords in your test cases or tasks\n"
+        md_content += "3. Refer to the examples below for syntax\n\n"
+        md_content += "### Example Robot Framework Usage\n\n"
+        md_content += "```robotframework\n"
+        md_content += "*** Settings ***\n"
+        md_content += "Library    RW.Core\n"
+        md_content += "Library    RW.K8s\n\n"
+        md_content += "*** Tasks ***\n"
+        md_content += "Check Pod Status\n"
+        md_content += "    ${pods}=    RW.K8s.Get Pods    namespace=default\n"
+        md_content += "    RW.Core.Add Pre To Report    Found ${pods} pods\n"
+        md_content += "```\n\n"
+        
+        # Categorize keywords
+        categories = self._categorize_keywords(libraries)
+        
+        # Table of contents
+        md_content += "## Table of Contents\n\n"
+        for category in categories.keys():
+            md_content += f"- [{category}](#{category.lower().replace(' ', '-').replace('/', '').replace('&', '')})\n"
+        md_content += "\n"
+        
+        # Generate content by category
+        for category, category_keywords in categories.items():
+            md_content += f"## {category}\n\n"
+            
+            if category_keywords:
+                # Group by library within category
+                libs_in_category = {}
+                for lib_name, keyword in category_keywords:
+                    if lib_name not in libs_in_category:
+                        libs_in_category[lib_name] = []
+                    libs_in_category[lib_name].append(keyword)
+                
+                for lib_name, keywords in libs_in_category.items():
+                    md_content += f"### {lib_name} Library\n\n"
+                    
+                    for keyword in keywords:
+                        md_content += f"#### {keyword['name']}\n\n"
+                        
+                        # Add documentation
+                        if keyword['documentation']:
+                            md_content += f"{keyword['documentation']}\n\n"
+                        
+                        # Add arguments
+                        if keyword['arguments']:
+                            md_content += "**Arguments:**\n\n"
+                            for arg in keyword['arguments']:
+                                md_content += f"- `{arg}`\n"
+                            md_content += "\n"
+                        
+                        # Add return values
+                        if keyword['returns']:
+                            md_content += "**Returns:**\n\n"
+                            for ret in keyword['returns']:
+                                md_content += f"- {ret}\n"
+                            md_content += "\n"
+                        
+                        # Add Robot Framework example
+                        md_content += "**Robot Framework Example:**\n\n"
+                        md_content += "```robotframework\n"
+                        md_content += self._generate_robot_example(keyword)
+                        md_content += "\n```\n\n"
+                        
+                        # Add original examples if available
+                        if keyword['examples']:
+                            md_content += "**Additional Examples:**\n\n"
+                            md_content += "```python\n"
+                            for example in keyword['examples']:
+                                md_content += f"{example}\n"
+                            md_content += "```\n\n"
+                        
+                        md_content += "---\n\n"
+        
+        # Quick reference section
+        md_content += "## Quick Reference\n\n"
+        md_content += "### All Keywords by Library\n\n"
         for lib_name, keywords in libraries.items():
-            md_content += f"## {lib_name}\n\n"
-            
-            # Add library description if available
-            if keywords and keywords[0].get('documentation'):
-                md_content += f"{keywords[0]['documentation']}\n\n"
-            
+            md_content += f"**{lib_name}:**\n"
             for keyword in keywords:
-                md_content += f"### {keyword['name']}\n\n"
-                
-                # Add documentation
-                if keyword['documentation']:
-                    md_content += f"{keyword['documentation']}\n\n"
-                
-                # Add arguments
-                if keyword['arguments']:
-                    md_content += "#### Arguments\n\n"
-                    for arg in keyword['arguments']:
-                        md_content += f"- `{arg}`\n"
-                    md_content += "\n"
-                
-                # Add return values
-                if keyword['returns']:
-                    md_content += "#### Returns\n\n"
-                    for ret in keyword['returns']:
-                        md_content += f"- `{ret}`\n"
-                    md_content += "\n"
-                
-                # Add examples
-                if keyword['examples']:
-                    md_content += "#### Examples\n\n"
-                    md_content += "```robotframework\n"
-                    for example in keyword['examples']:
-                        md_content += f"{example}\n"
-                    md_content += "```\n\n"
-                
-                md_content += "---\n\n"
+                md_content += f"- `{keyword['name']}`\n"
+            md_content += "\n"
                 
         return md_content
 
@@ -235,52 +338,56 @@ class DocumentationGenerator:
         # Add navigation panel
         nav_panel = soup.new_tag('div', attrs={'class': 'panel'})
         nav_panel['style'] = 'float: right; margin: 0 0 1em 1em;'
-        nav_panel['class'] = 'panel'
         
         # Create table of contents
         toc = soup.new_tag('div', attrs={'class': 'toc'})
-        toc.append(soup.new_tag('h2'))
-        toc.h2.string = 'Table of Contents'
+        toc_header = soup.new_tag('h3')
+        toc_header.string = 'Table of Contents'
+        toc.append(toc_header)
         
         # Add navigation links
         for h2 in soup.find_all('h2'):
-            link = soup.new_tag('a', href=f"#{h2.get('id', '')}")
-            link.string = h2.string
-            toc.append(link)
-            toc.append(soup.new_tag('br'))
+            if h2.string:
+                link = soup.new_tag('p')
+                link.string = f"• {h2.string}"
+                toc.append(link)
         
         nav_panel.append(toc)
-        soup.body.insert(0, nav_panel)
+        if soup.body:
+            soup.body.insert(0, nav_panel)
         
         # Create or update the documentation page
         page_title = "RunWhen CodeCollection Libraries Documentation"
         
-        # Check if page exists
-        existing_page = self.confluence.get_page_by_title(
-            space=self.space_key,
-            title=page_title
-        )
-        
-        if existing_page:
-            # Update existing page
-            self.confluence.update_page(
-                page_id=existing_page['id'],
-                title=page_title,
-                body=str(soup),
-                parent_id=self.parent_page_id,
-                type='page'
-            )
-            logger.info(f"Updated existing Confluence page: {page_title}")
-        else:
-            # Create new page
-            self.confluence.create_page(
+        try:
+            # Check if page exists
+            existing_page = self.confluence.get_page_by_title(
                 space=self.space_key,
-                title=page_title,
-                body=str(soup),
-                parent_id=self.parent_page_id,
-                type='page'
+                title=page_title
             )
-            logger.info(f"Created new Confluence page: {page_title}")
+            
+            if existing_page:
+                # Update existing page
+                self.confluence.update_page(
+                    page_id=existing_page['id'],
+                    title=page_title,
+                    body=str(soup),
+                    parent_id=self.parent_page_id,
+                    type='page'
+                )
+                logger.info(f"Updated existing Confluence page: {page_title}")
+            else:
+                # Create new page
+                self.confluence.create_page(
+                    space=self.space_key,
+                    title=page_title,
+                    body=str(soup),
+                    parent_id=self.parent_page_id,
+                    type='page'
+                )
+                logger.info(f"Created new Confluence page: {page_title}")
+        except Exception as e:
+            logger.error(f"Error updating Confluence: {e}")
 
     def save_markdown(self, markdown_content):
         """Save markdown documentation to a file."""
@@ -296,8 +403,14 @@ def main():
         generator = DocumentationGenerator()
         
         # Parse libraries
-        logger.info("Parsing library files...")
+        logger.info("Parsing Python library files...")
         libraries = generator.parse_library_files()
+        
+        if not libraries:
+            logger.warning("No libraries found or parsed successfully!")
+            return
+        
+        logger.info(f"Found {len(libraries)} libraries with keywords")
         
         # Generate markdown
         logger.info("Generating markdown documentation...")
