@@ -32,6 +32,10 @@ inputs:
     description: "Slack bot token for sending notifications"
     required: false
     default: ""
+  version_file:
+    description: "Path to a VERSION file to write the generated version into (for repos using 'version = { file = \"VERSION\" }' in pyproject.toml). Leave empty to skip."
+    required: false
+    default: ""
 
 outputs:
   version:
@@ -81,7 +85,18 @@ runs:
       run: pip install --upgrade packaging setuptools wheel build twine
       shell: bash
 
+    - name: Write version file
+      if: ${{ inputs.version_file != '' }}
+      env:
+        VERSION: ${{ steps.generate_version.outputs.version }}
+        VERSION_FILE: ${{ inputs.version_file }}
+      run: |
+        echo "Writing version ${VERSION} to ${VERSION_FILE}"
+        echo "${VERSION}" > "${VERSION_FILE}"
+      shell: bash
+
     - name: Update version in pyproject.toml
+      if: ${{ inputs.version_file == '' }}
       env:
         VERSION: ${{ steps.generate_version.outputs.version }}
         VERSION_PLACEHOLDER: ${{ inputs.version_placeholder }}
