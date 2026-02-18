@@ -59,7 +59,7 @@ runs:
 
         BASE_VERSION=$(date +%Y.%m.%d)
 
-        last_number=$(git tag | grep "^${TAG_PREFIX}${BASE_VERSION}\.[0-9]*$" | awk -F '.' '{print $NF}' | sort -n | tail -1)
+        last_number=$(git tag | grep "^${TAG_PREFIX}${BASE_VERSION}\.[0-9]*$" | awk -F '.' '{print $NF}' | sort -n | tail -1 || true)
         if [ -z "$last_number" ]; then
           NEXT_RELEASE_NUMBER=1
         else

@@ -39,7 +39,7 @@ runs:
         BASE_TAG="${TAG_PREFIX}$(date +%Y-%m-%d)"
 
         ESCAPED_BASE=$(printf '%s' "$BASE_TAG" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
-        last_tag_number=$(git tag | grep "^${ESCAPED_BASE}\.[0-9]*$" | awk -F '.' '{print $NF}' | sort -n | tail -1)
+        last_tag_number=$(git tag | grep "^${ESCAPED_BASE}\.[0-9]*$" | awk -F '.' '{print $NF}' | sort -n | tail -1 || true)
         if [ -z "$last_tag_number" ]; then
           NEXT_RELEASE_NUMBER=1
         else
