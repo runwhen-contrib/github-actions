@@ -1,0 +1,119 @@
+name: "Publish PyPI Package"
+description: "Builds and publishes a Python package to PyPI with date-based versioning (YYYY.MM.DD.N). Handles version generation, build, validation, and optional Slack notification."
+
+inputs:
+  pip_package_name:
+    description: "The PyPI package name (used for Slack notification links)"
+    required: true
+  pypi_token:
+    description: "PyPI authentication token"
+    required: true
+  version_placeholder:
+    description: "The placeholder version string in pyproject.toml to replace with the generated version"
+    required: false
+    default: "0.0.0"
+  pyproject_path:
+    description: "Path to pyproject.toml relative to the repo root"
+    required: false
+    default: "pyproject.toml"
+  tag_prefix:
+    description: "Prefix for PyPI version tracking tags (e.g., 'pypi-' produces 'pypi-2024.01.15.1')"
+    required: false
+    default: "pypi-"
+  python_version:
+    description: "Python version to use for building"
+    required: false
+    default: "3.x"
+  slack_channel:
+    description: "Slack channel for deployment notifications (leave empty to skip)"
+    required: false
+    default: ""
+  slack_bot_token:
+    description: "Slack bot token for sending notifications"
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: "The version that was published to PyPI (e.g., '2024.01.15.1')"
+    value: ${{ steps.generate_version.outputs.version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Fetch tags
+      run: git fetch --force --tags --prune
+      shell: bash
+
+    - name: Generate date-based version
+      id: generate_version
+      env:
+        TAG_PREFIX: ${{ inputs.tag_prefix }}
+      run: |
+        set -euo pipefail
+
+        BASE_VERSION=$(date +%Y.%m.%d)
+
+        last_number=$(git tag | grep "^${TAG_PREFIX}${BASE_VERSION}\.[0-9]*$" | awk -F '.' '{print $NF}' | sort -n | tail -1)
+        if [ -z "$last_number" ]; then
+          NEXT_RELEASE_NUMBER=1
+        else
+          NEXT_RELEASE_NUMBER=$((last_number + 1))
+        fi
+
+        VERSION="$BASE_VERSION.$NEXT_RELEASE_NUMBER"
+
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Generated version: $VERSION"
+
+        git config user.name "${GITHUB_ACTOR}"
+        git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+        git tag "${TAG_PREFIX}${VERSION}"
+        git push origin "${TAG_PREFIX}${VERSION}" || echo "Tag already exists or push failed (non-fatal)"
+      shell: bash
+
+    - name: Install build dependencies
+      run: pip install --upgrade packaging setuptools wheel build twine
+      shell: bash
+
+    - name: Update version in pyproject.toml
+      env:
+        VERSION: ${{ steps.generate_version.outputs.version }}
+        VERSION_PLACEHOLDER: ${{ inputs.version_placeholder }}
+        PYPROJECT_PATH: ${{ inputs.pyproject_path }}
+      run: |
+        echo "Setting version to ${VERSION} in ${PYPROJECT_PATH}"
+        sed -i "s/^version = \"${VERSION_PLACEHOLDER}\"/version = \"${VERSION}\"/" "${PYPROJECT_PATH}"
+        grep "^version = " "${PYPROJECT_PATH}"
+      shell: bash
+
+    - name: Build Package (PEP 517)
+      run: |
+        rm -rf dist build *.egg-info
+        echo "Building package with version: ${{ steps.generate_version.outputs.version }}"
+        python -m build
+      shell: bash
+
+    - name: Check distribution
+      run: twine check dist/*
+      shell: bash
+
+    - name: Publish to PyPI
+      env:
+        TWINE_PASSWORD: ${{ inputs.pypi_token }}
+      run: twine upload dist/* -u __token__ -p "$TWINE_PASSWORD"
+      shell: bash
+
+    - name: Notify Slack
+      if: ${{ inputs.slack_channel != '' && inputs.slack_bot_token != '' }}
+      uses: slackapi/slack-github-action@v1.19.0
+      with:
+        channel-id: ${{ inputs.slack_channel }}
+        slack-message: "Just deployed version ${{ steps.generate_version.outputs.version }} of ${{ inputs.pip_package_name }} to https://pypi.org/project/${{ inputs.pip_package_name }}"
+      env:
+        SLACK_BOT_TOKEN: ${{ inputs.slack_bot_token }}

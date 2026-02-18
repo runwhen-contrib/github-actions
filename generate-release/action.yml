@@ -1,0 +1,62 @@
+name: "Generate Date-Based Release"
+description: "Creates date-based tags and GitHub releases with automatic versioning (YYYY-MM-DD.N format). Supports multiple releases per day with auto-incrementing suffixes."
+
+inputs:
+  tag_prefix:
+    description: "Optional prefix for the tag (e.g., 'v' produces 'v2024-01-15.1')"
+    required: false
+    default: ""
+  github_token:
+    description: "GitHub token for creating releases (typically secrets.GITHUB_TOKEN or github.token)"
+    required: true
+
+outputs:
+  release_tag:
+    description: "The full tag name of the created release (e.g., '2024-01-15.1')"
+    value: ${{ steps.create_release.outputs.release_tag }}
+  version:
+    description: "Alias for release_tag"
+    value: ${{ steps.create_release.outputs.release_tag }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch tags
+      run: git fetch --force --tags --prune
+      shell: bash
+
+    - name: Create Date-based Tag and Release
+      id: create_release
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        TAG_PREFIX: ${{ inputs.tag_prefix }}
+      run: |
+        set -euo pipefail
+
+        git config user.name "${GITHUB_ACTOR}"
+        git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+        BASE_TAG="${TAG_PREFIX}$(date +%Y-%m-%d)"
+
+        ESCAPED_BASE=$(printf '%s' "$BASE_TAG" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
+        last_tag_number=$(git tag | grep "^${ESCAPED_BASE}\.[0-9]*$" | awk -F '.' '{print $NF}' | sort -n | tail -1)
+        if [ -z "$last_tag_number" ]; then
+          NEXT_RELEASE_NUMBER=1
+        else
+          NEXT_RELEASE_NUMBER=$((last_tag_number + 1))
+        fi
+
+        NEW_TAG="$BASE_TAG.$NEXT_RELEASE_NUMBER"
+
+        echo "Creating release tag: $NEW_TAG"
+
+        git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+        git push origin "$NEW_TAG"
+
+        echo "Created and pushed tag $NEW_TAG"
+
+        gh release create "$NEW_TAG" --generate-notes --latest
+
+        echo "Created GitHub release for $NEW_TAG"
+        echo "release_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+      shell: bash
