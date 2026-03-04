@@ -1,0 +1,49 @@
+# Drop this into .github/workflows/score-batch.yaml in any CodeCollection repo.
+# Manually trigger a full scoring run across all CodeBundles.
+
+name: Score CodeBundles (Full)
+
+on:
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: "Minimum passing score (0-100)"
+        required: false
+        default: "70"
+      fail_below_threshold:
+        description: "Fail the workflow if any bundle is below threshold"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Score all CodeBundles
+        id: score
+        uses: runwhen-contrib/github-actions/codebundle-farm/score-v2@main
+        with:
+          directory: ./codebundles
+          batch: "true"
+          threshold: ${{ inputs.threshold }}
+          post_comment: "false"
+          fail_below_threshold: ${{ inputs.fail_below_threshold }}
+
+      - name: Print summary
+        run: |
+          echo "## Scoring Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Scored**: ${{ steps.score.outputs.total_scored }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Passed**: ${{ steps.score.outputs.total_passed }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Failed**: ${{ steps.score.outputs.total_failed }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.score.outputs.report_markdown }}" >> "$GITHUB_STEP_SUMMARY"

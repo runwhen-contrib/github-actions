@@ -1,0 +1,150 @@
+name: "CodeBundle Score v2"
+description: "Scores CodeBundle quality against a 100-point rubric (v2). Posts results as PR comments and sets pass/fail status."
+
+inputs:
+  directory:
+    description: "Path to a CodeBundle directory, or parent directory when using batch mode."
+    required: false
+    default: "./"
+
+  batch:
+    description: "Score all CodeBundles found under 'directory'."
+    required: false
+    default: "false"
+
+  threshold:
+    description: "Minimum score to pass (0-100)."
+    required: false
+    default: "70"
+
+  only_changed:
+    description: "Only score CodeBundles with changed files in the current PR."
+    required: false
+    default: "false"
+
+  base_sha:
+    description: "Base SHA for diff (auto-detected in PR context if not set)."
+    required: false
+    default: ""
+
+  head_sha:
+    description: "Head SHA for diff (auto-detected in PR context if not set)."
+    required: false
+    default: ""
+
+  post_comment:
+    description: "Post a markdown summary as a PR comment (requires GITHUB_TOKEN)."
+    required: false
+    default: "true"
+
+  fail_below_threshold:
+    description: "Set the action status to failure if any CodeBundle scores below threshold."
+    required: false
+    default: "true"
+
+  github_token:
+    description: "GitHub token for posting PR comments. Defaults to GITHUB_TOKEN."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  total_scored:
+    description: "Number of CodeBundles scored."
+    value: ${{ steps.score.outputs.total_scored }}
+  total_passed:
+    description: "Number of CodeBundles that passed."
+    value: ${{ steps.score.outputs.total_passed }}
+  total_failed:
+    description: "Number of CodeBundles that failed."
+    value: ${{ steps.score.outputs.total_failed }}
+  report_markdown:
+    description: "Full markdown report."
+    value: ${{ steps.score.outputs.report_markdown }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install scorer dependencies
+      shell: bash
+      run: pip install -r "${{ github.action_path }}/requirements.txt"
+
+    - name: Resolve base/head SHAs
+      id: resolve-shas
+      shell: bash
+      run: |
+        BASE_SHA="${{ inputs.base_sha }}"
+        HEAD_SHA="${{ inputs.head_sha }}"
+
+        if [ "${{ inputs.only_changed }}" = "true" ]; then
+          if [ -z "$BASE_SHA" ] && [ -z "$HEAD_SHA" ]; then
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              BASE_SHA="${{ github.event.pull_request.base.sha }}"
+              HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            else
+              BASE_SHA="HEAD~1"
+              HEAD_SHA="HEAD"
+            fi
+          fi
+        fi
+
+        echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+        echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+    - name: Run scorer
+      id: score
+      shell: bash
+      env:
+        SCORER_PATH: ${{ github.action_path }}
+        INPUT_DIRECTORY: ${{ inputs.directory }}
+        INPUT_BATCH: ${{ inputs.batch }}
+        INPUT_THRESHOLD: ${{ inputs.threshold }}
+        INPUT_ONLY_CHANGED: ${{ inputs.only_changed }}
+        INPUT_BASE_SHA: ${{ steps.resolve-shas.outputs.base_sha }}
+        INPUT_HEAD_SHA: ${{ steps.resolve-shas.outputs.head_sha }}
+        INPUT_FAIL_BELOW_THRESHOLD: ${{ inputs.fail_below_threshold }}
+      run: bash "${{ github.action_path }}/entrypoint.sh"
+
+    - name: Post PR comment
+      if: inputs.post_comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const fs = require('fs');
+          const reportPath = '${{ steps.score.outputs.report_file }}';
+          if (!reportPath || !fs.existsSync(reportPath)) {
+            console.log('No report file found, skipping comment.');
+            return;
+          }
+          const body = fs.readFileSync(reportPath, 'utf8');
+          const marker = '<!-- codebundle-score-v2 -->';
+
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const existing = comments.find(c => c.body.includes(marker));
+          const fullBody = `${marker}\n${body}`;
+
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body: fullBody,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: fullBody,
+            });
+          }

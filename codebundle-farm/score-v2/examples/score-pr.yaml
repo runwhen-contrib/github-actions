@@ -1,0 +1,31 @@
+# Drop this into .github/workflows/score-pr.yaml in any CodeCollection repo.
+# Scores only the CodeBundles with changes in the PR and posts a comment.
+
+name: Score CodeBundles (PR)
+
+on:
+  pull_request:
+    paths:
+      - "codebundles/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Score changed CodeBundles
+        id: score
+        uses: runwhen-contrib/github-actions/codebundle-farm/score-v2@main
+        with:
+          directory: ./codebundles
+          only_changed: "true"
+          threshold: "70"
+          post_comment: "true"
+          fail_below_threshold: "true"
